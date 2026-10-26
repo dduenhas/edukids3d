@@ -1,0 +1,6 @@
+{
+  "name": "EduGames Kids: Pensamento Computacional",
+  "description": "Plataforma de jogos educativos para a Educação Infantil (4 a 5 anos) alinhada ao Complemento à BNCC de Computação (EI03CO02), desenvolvendo Decomposição, Reconhecimento de Padrões, Abstração e Algoritmos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

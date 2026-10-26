@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Outfit', system-ui, -apple-system, sans-serif;
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
+  }
+}
+
+/* Opção de Fonte Ampliada para Acessibilidade */
+html[data-font-scale="large"] {
+  font-size: 118%;
+}
+
+/* Opção de Alto Contraste WCAG AAA */
+html[data-high-contrast="true"] body {
+  background-color: #000000 !important;
+  color: #FFFFFF !important;
+}
+
+html[data-high-contrast="true"] .hc-surface {
+  background-color: #090D16 !important;
+  border-color: #FFFFFF !important;
+  border-width: 2px !important;
+}
+
+html[data-high-contrast="true"] .hc-button {
+  border: 2px solid #FACC15 !important;
+}
+
+/* Animações suaves apenas no compositor (transform, opacity, filter) para guiar a criança */
+@keyframes floatSlow {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes confettiFall {
+  0% {
+    transform: translateY(-20px) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh) rotate(540deg);
+    opacity: 0;
+  }
+}
+
+@keyframes gentleBounce {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+@keyframes guidePulseGlow {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.75));
+  }
+  50% {
+    transform: scale(1.05);
+    filter: drop-shadow(0 0 18px rgba(250, 204, 21, 1));
+  }
+}
+
+@keyframes pointerBob {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+
+.animate-float-slow {
+  animation: floatSlow 3.2s ease-in-out infinite;
+}
+
+.animate-gentle-bounce {
+  animation: gentleBounce 1.4s ease-in-out infinite;
+}
+
+.animate-guide-glow {
+  animation: guidePulseGlow 1.6s ease-in-out infinite;
+}
+
+.animate-pointer-bob {
+  animation: pointerBob 1.1s ease-in-out infinite;
+}
+
+/* Modo Sensorial Calmo (TEA) ou Redução de Movimento */
+html[data-calm-mode="true"] .animate-float-slow,
+html[data-calm-mode="true"] .animate-gentle-bounce,
+html[data-calm-mode="true"] .animate-guide-glow,
+html[data-calm-mode="true"] .animate-pointer-bob,
+@media (prefers-reduced-motion: reduce) {
+  .animate-float-slow,
+  .animate-gentle-bounce,
+  .animate-guide-glow,
+  .animate-pointer-bob {
+    animation: none !important;
+  }
+}
