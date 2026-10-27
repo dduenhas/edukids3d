@@ -24,6 +24,9 @@ interface ThreeBitStageProps {
   primaryColor?: string;
   accentColor?: string;
   gridState?: RobotGridState;
+  showcaseSplitView?: boolean;
+  showcaseYawDeg?: number;
+  showcasePulseCount?: number;
   onRobotClick?: () => void;
   onSelectHubGame?: (gameId: GameId) => void;
   onHoverHubGame?: (gameId: GameId | null) => void;
@@ -47,6 +50,9 @@ export const ThreeBitStage: React.FC<ThreeBitStageProps> = ({
   primaryColor = '#38BDF8',
   accentColor = '#FBBF24',
   gridState,
+  showcaseSplitView = false,
+  showcaseYawDeg = 0,
+  showcasePulseCount = 0,
   onRobotClick,
   onSelectHubGame,
   onHoverHubGame,
@@ -62,6 +68,10 @@ export const ThreeBitStage: React.FC<ThreeBitStageProps> = ({
     primaryColor,
     accentColor,
     gridState,
+    showcaseSplitView,
+    showcaseYawDeg,
+    showcasePulseCount,
+    lastPulseCount: showcasePulseCount,
     onRobotClick,
     onSelectHubGame,
     onHoverHubGame,
@@ -78,6 +88,9 @@ export const ThreeBitStage: React.FC<ThreeBitStageProps> = ({
     stateRef.current.primaryColor = primaryColor;
     stateRef.current.accentColor = accentColor;
     stateRef.current.gridState = gridState;
+    stateRef.current.showcaseSplitView = showcaseSplitView;
+    stateRef.current.showcaseYawDeg = showcaseYawDeg;
+    stateRef.current.showcasePulseCount = showcasePulseCount;
     stateRef.current.onRobotClick = onRobotClick;
     stateRef.current.onSelectHubGame = onSelectHubGame;
     stateRef.current.onHoverHubGame = onHoverHubGame;
@@ -89,6 +102,9 @@ export const ThreeBitStage: React.FC<ThreeBitStageProps> = ({
     primaryColor,
     accentColor,
     gridState,
+    showcaseSplitView,
+    showcaseYawDeg,
+    showcasePulseCount,
     onRobotClick,
     onSelectHubGame,
     onHoverHubGame,
@@ -713,15 +729,34 @@ export const ThreeBitStage: React.FC<ThreeBitStageProps> = ({
         const gs = st.gridState;
         rebuildGridGeometry(gs);
 
-        const offset = (gs.gridSize - 1) / 2;
-        const targetX = gs.robotPos.x - offset;
-        const targetZ = gs.robotPos.z - offset;
+        if (st.showcasePulseCount !== st.lastPulseCount) {
+          st.lastPulseCount = st.showcasePulseCount;
+          st.jumpImpulse = 1.0;
+          _burstOrigin.copy(robotGroup.position).add(new THREE.Vector3(0, 0.9, 0));
+          sparkManager.triggerBurst(_burstOrigin, '#FACC15');
+        }
 
-        robotGroup.scale.setScalar(THREE.MathUtils.damp(robotGroup.scale.x, 0.62, 8, dt));
+        const yawRad = st.showcaseSplitView ? THREE.MathUtils.degToRad(st.showcaseYawDeg) : 0;
+        gridWorldGroup.rotation.y = THREE.MathUtils.damp(gridWorldGroup.rotation.y, yawRad, 6, dt);
+
+        const offset = (gs.gridSize - 1) / 2;
+        const localX = gs.robotPos.x - offset;
+        const localZ = gs.robotPos.z - offset;
+        const cosY = Math.cos(gridWorldGroup.rotation.y);
+        const sinY = Math.sin(gridWorldGroup.rotation.y);
+        const targetX = localX * cosY + localZ * sinY;
+        const targetZ = -localX * sinY + localZ * cosY;
+
+        robotGroup.scale.setScalar(
+          THREE.MathUtils.damp(robotGroup.scale.x, st.showcaseSplitView ? 0.72 : 0.62, 8, dt)
+        );
         robotGroup.position.x = THREE.MathUtils.damp(robotGroup.position.x, targetX, 8, dt);
         robotGroup.position.z = THREE.MathUtils.damp(robotGroup.position.z, targetZ, 8, dt);
 
-        if (gs.isCelebrating) {
+        if (st.jumpImpulse > 0.01) {
+          st.jumpImpulse = THREE.MathUtils.damp(st.jumpImpulse, 0, 5, dt);
+          robotGroup.position.y = 0.12 + Math.sin(st.jumpImpulse * Math.PI) * 0.75;
+        } else if (gs.isCelebrating) {
           robotGroup.position.y = 0.12 + Math.abs(Math.sin(elapsed * 8)) * 0.38;
         } else if (gs.isErrorBounce) {
           robotGroup.position.y = 0.12 + Math.abs(Math.sin(elapsed * 14)) * 0.12;
@@ -735,7 +770,8 @@ export const ThreeBitStage: React.FC<ThreeBitStageProps> = ({
           2: 0,
           3: -Math.PI / 2,
         };
-        const targetRotY = dirAngles[gs.robotDir] ?? 0;
+        const baseRotY = st.showcaseSplitView ? 0 : (dirAngles[gs.robotDir] ?? 0);
+        const targetRotY = baseRotY + gridWorldGroup.rotation.y;
         robotGroup.rotation.y = THREE.MathUtils.damp(robotGroup.rotation.y, targetRotY, 8, dt);
         headGroup.rotation.set(0, 0, 0);
 
@@ -743,7 +779,11 @@ export const ThreeBitStage: React.FC<ThreeBitStageProps> = ({
         goalStarMesh.rotation.y = elapsed * 2.2;
         goalStarMesh.position.y = 0.55 + Math.sin(elapsed * 3) * 0.08;
 
-        if (st.cameraPreset === 'top') {
+        const isWide = (container.clientWidth || window.innerWidth) >= 768;
+        if (st.showcaseSplitView && isWide) {
+          _targetCamPos.set(2.35, 3.85, 4.55);
+          _targetLookAt.set(1.18, 0.25, 0);
+        } else if (st.cameraPreset === 'top') {
           _targetCamPos.set(0, 6.4, 1.2);
           _targetLookAt.set(0, 0, 0);
         } else if (st.cameraPreset === 'front') {

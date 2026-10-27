@@ -76,7 +76,7 @@ export const GameIntroModal: React.FC<GameIntroModalProps> = ({
               type="button"
               onClick={() => {
                 soundEngine.playTap();
-                soundEngine.speak(spokenIntro);
+                soundEngine.speakManual(spokenIntro);
               }}
               className="hc-button inline-flex items-center gap-2.5 min-h-[48px] px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 font-semibold text-sm transition-transform active:scale-95 whitespace-nowrap shrink-0"
             >

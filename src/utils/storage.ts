@@ -1,7 +1,7 @@
 /**
  * Persistência local (localStorage) para progresso das estrelas,
- * avatar customizado da criança, configurações de acessibilidade inteligente
- * e métricas de avaliação formativa para o Painel do Professor.
+ * avatar customizado da criança, configurações de áudio/narração,
+ * acessibilidade inteligente e métricas de avaliação formativa para o Painel do Professor.
  * Nenhum dado pessoal é coletado ou enviado pela rede.
  */
 
@@ -31,9 +31,22 @@ export interface GameMetrics {
 }
 
 export interface AppSettings {
-  voiceVolume: number;
-  speechRate: number;
+  /** Ativa ou desativa todas as narrações por voz (Inicia DESATIVADO por padrão) */
+  narrationEnabled: boolean;
+  /** Ativa ou desativa narração automática ao iniciar fases e passos (Inicia DESATIVADO por padrão) */
+  autoNarration: boolean;
+  /** Silencia ou ativa os efeitos sonoros normais do jogo (Inicia ATIVO / false por padrão) */
   sfxMuted: boolean;
+  /** Volume Geral (Master) de 0.0 a 1.0 */
+  masterVolume: number;
+  /** Volume individual dos efeitos sonoros de interação (cliques, encaixe 3D, madeira, pincel) de 0.0 a 1.0 */
+  sfxVolume: number;
+  /** Volume individual das comemorações, fanfarras, sons do robô e bichinhos de 0.0 a 1.0 */
+  fanfareVolume: number;
+  /** Volume individual da voz da narração de 0.0 a 1.0 */
+  voiceVolume: number;
+  /** Velocidade da fala da narração */
+  speechRate: number;
   highContrast: boolean;
   largeText: boolean;
   /** Modo Daltonismo com símbolos geométricos nas cores e paleta segura (Okabe-Ito) */
@@ -55,7 +68,8 @@ export interface EduGamesProgress {
   settings: AppSettings;
 }
 
-const STORAGE_KEY = 'edugames_kids_bncc_v1';
+const STORAGE_KEY = 'edugames_kids_bncc_v2';
+const LEGACY_STORAGE_KEY = 'edugames_kids_bncc_v1';
 
 export const DEFAULT_AVATAR: CustomAvatarConfig = {
   headType: 'robot',
@@ -94,9 +108,14 @@ export function getInitialProgress(): EduGamesProgress {
     },
     customAvatar: { ...DEFAULT_AVATAR },
     settings: {
-      voiceVolume: 1.0,
-      speechRate: 0.95,
+      narrationEnabled: false,
+      autoNarration: false,
       sfxMuted: false,
+      masterVolume: 1.0,
+      sfxVolume: 0.85,
+      fanfareVolume: 0.85,
+      voiceVolume: 0.9,
+      speechRate: 0.95,
       highContrast: false,
       largeText: false,
       colorBlindMode: true,
@@ -111,16 +130,38 @@ export function getInitialProgress(): EduGamesProgress {
 export function loadProgress(): EduGamesProgress {
   if (typeof window === 'undefined') return getInitialProgress();
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return getInitialProgress();
-    const parsed = JSON.parse(raw) as Partial<EduGamesProgress>;
-    const base = getInitialProgress();
-    return {
-      stars: { ...base.stars, ...(parsed.stars || {}) },
-      metrics: { ...base.metrics, ...(parsed.metrics || {}) },
-      customAvatar: { ...base.customAvatar, ...(parsed.customAvatar || {}) },
-      settings: { ...base.settings, ...(parsed.settings || {}) },
-    };
+    const rawV2 = window.localStorage.getItem(STORAGE_KEY);
+    if (rawV2) {
+      const parsed = JSON.parse(rawV2) as Partial<EduGamesProgress>;
+      const base = getInitialProgress();
+      return {
+        stars: { ...base.stars, ...(parsed.stars || {}) },
+        metrics: { ...base.metrics, ...(parsed.metrics || {}) },
+        customAvatar: { ...base.customAvatar, ...(parsed.customAvatar || {}) },
+        settings: { ...base.settings, ...(parsed.settings || {}) },
+      };
+    }
+
+    // Migra estrelas, métricas e avatar da versão anterior garantindo que a narração automática comece desativada
+    const rawV1 = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (rawV1) {
+      const parsedV1 = JSON.parse(rawV1) as Partial<EduGamesProgress>;
+      const base = getInitialProgress();
+      return {
+        stars: { ...base.stars, ...(parsedV1.stars || {}) },
+        metrics: { ...base.metrics, ...(parsedV1.metrics || {}) },
+        customAvatar: { ...base.customAvatar, ...(parsedV1.customAvatar || {}) },
+        settings: {
+          ...base.settings,
+          ...(parsedV1.settings || {}),
+          narrationEnabled: false,
+          autoNarration: false,
+          hoverSpeech: false,
+        },
+      };
+    }
+
+    return getInitialProgress();
   } catch {
     return getInitialProgress();
   }

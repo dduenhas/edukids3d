@@ -11,10 +11,15 @@ import {
   ArrowRight,
   Trash2,
   Camera,
+  Settings,
+  Sparkles,
+  Star,
+  Lightbulb,
+  Zap,
 } from 'lucide-react';
 import { CustomAvatarConfig } from '../utils/storage';
 import { ThreeBitStage, RobotGridState } from '../components/ThreeBitStage';
-import { GameIntroModal, CelebrationOverlay } from '../components/GameIntroModal';
+import { GameIntroModal } from '../components/GameIntroModal';
 import { DraggableMinimizableDock } from '../components/DraggableMinimizableDock';
 import { soundEngine } from '../utils/soundAndSpeech';
 
@@ -26,6 +31,7 @@ interface Game6Props {
   onRecordAttempt: () => void;
   onRecordHint: () => void;
   onBackHub: () => void;
+  onOpenSettings?: () => void;
 }
 
 type DirectionCmd = 'UP' | 'RIGHT' | 'DOWN' | 'LEFT';
@@ -80,6 +86,7 @@ export const Game6ProgrameBit: React.FC<Game6Props> = ({
   onRecordAttempt,
   onRecordHint,
   onBackHub,
+  onOpenSettings,
 }) => {
   const [showIntro, setShowIntro] = useState(true);
   const [level, setLevel] = useState<1 | 2 | 3>(1);
@@ -89,6 +96,11 @@ export const Game6ProgrameBit: React.FC<Game6Props> = ({
   const [bugCmdIndex, setBugCmdIndex] = useState<number | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
+  const [celebrationAngleDeg, setCelebrationAngleDeg] = useState(0);
+  const [celebrationPulseCount, setCelebrationPulseCount] = useState(0);
+  const [celebrationFeedback, setCelebrationFeedback] = useState(
+    'Toque no Robô Bit no tabuleiro 3D para ouvir Bip-Bop-Buzzz, saltar ou girar!'
+  );
 
   const [gridState, setGridState] = useState<RobotGridState>({
     gridSize: 4,
@@ -127,6 +139,7 @@ export const Game6ProgrameBit: React.FC<Game6Props> = ({
     setActiveCmdIndex(null);
     setBugCmdIndex(null);
     setShowCelebration(false);
+    setCelebrationAngleDeg(0);
     setGridState({
       gridSize: cfg.gridSize,
       robotPos: { ...cfg.startPos },
@@ -201,6 +214,7 @@ export const Game6ProgrameBit: React.FC<Game6Props> = ({
         if (currX === gridState.starPos.x && currZ === gridState.starPos.z) {
           setIsRunning(false);
           setActiveCmdIndex(null);
+          soundEngine.playVictoryFanfare();
           setGridState((prev) => ({ ...prev, isCelebrating: true }));
           onCompleteLevel(level);
           setShowCelebration(true);
@@ -281,6 +295,11 @@ export const Game6ProgrameBit: React.FC<Game6Props> = ({
     }
   };
 
+  const rotateBoardBounded = (deltaDeg: number) => {
+    setCelebrationAngleDeg((prev) => Math.max(-45, Math.min(45, prev + deltaDeg)));
+    soundEngine.playTap();
+  };
+
   const renderArrowIcon = (cmd: DirectionCmd, className = 'w-6 h-6') => {
     if (cmd === 'UP') return <ArrowUp className={className} />;
     if (cmd === 'RIGHT') return <ArrowRight className={className} />;
@@ -299,8 +318,18 @@ export const Game6ProgrameBit: React.FC<Game6Props> = ({
           primaryColor={avatarConfig.primaryColor}
           accentColor={avatarConfig.accentColor}
           gridState={gridState}
+          showcaseSplitView={showCelebration}
+          showcaseYawDeg={celebrationAngleDeg}
+          showcasePulseCount={celebrationPulseCount}
+          onRobotClick={() => {
+            soundEngine.playRobotBeepBop();
+            setCelebrationPulseCount((c) => c + 1);
+            if (showCelebration) {
+              setCelebrationFeedback('Bip-Bop-Buzzz! O Robô Bit deu um super pulo na estrela dourada!');
+            }
+          }}
           onTileClick={(tx, tz) => {
-            if (level !== 3 || isRunning) return;
+            if (level !== 3 || isRunning || showCelebration) return;
             if (
               (tx === gridState.robotPos.x && tz === gridState.robotPos.z) ||
               (tx === gridState.starPos.x && tz === gridState.starPos.z)
@@ -386,11 +415,12 @@ export const Game6ProgrameBit: React.FC<Game6Props> = ({
 
           <button
             type="button"
-            onClick={() =>
-              soundEngine.speak(
+            onClick={() => {
+              soundEngine.playTap();
+              soundEngine.speakManual(
                 'Toque nas setas coloridas abaixo para montar a fila de comandos e aperte Executar!'
-              )
-            }
+              );
+            }}
             className="hc-button min-h-[48px] px-3.5 rounded-2xl bg-slate-900/95 hover:bg-slate-800 border border-slate-700 text-sky-300 font-bold text-xs flex items-center gap-1.5 shadow-xl"
           >
             <Volume2 className="w-5 h-5 text-sky-400" />
@@ -404,110 +434,128 @@ export const Game6ProgrameBit: React.FC<Game6Props> = ({
             <HelpCircle className="w-5 h-5 text-amber-400" />
             <span className="hidden sm:inline">Dica</span>
           </button>
-        </div>
-      </header>
 
-      {/* Dock Flutuante Inferior Arrastável e Minimizável de Programação (Setas + Fila + Executar) */}
-      <DraggableMinimizableDock
-        title={`Programação do Robô Bit (${commands.length}/10 passos)`}
-        minimizedLabel="Mostrar Painel de Programação"
-        maxWidthClass="max-w-5xl"
-      >
-        <div className="flex flex-col md:flex-row items-center justify-between gap-3">
-          {/* 1. Botões Direcionais */}
-          <div className="flex items-center gap-2 shrink-0">
-            {(
-              [
-                { cmd: 'UP', label: 'Cima', color: 'bg-sky-500 hover:bg-sky-400 text-slate-950' },
-                { cmd: 'RIGHT', label: 'Direita', color: 'bg-emerald-500 hover:bg-emerald-400 text-slate-950' },
-                { cmd: 'DOWN', label: 'Baixo', color: 'bg-amber-400 hover:bg-amber-300 text-slate-950' },
-                { cmd: 'LEFT', label: 'Esquerda', color: 'bg-purple-400 hover:bg-purple-300 text-slate-950' },
-              ] as const
-            ).map((btn) => (
-              <button
-                key={btn.cmd}
-                type="button"
-                disabled={isRunning}
-                onMouseEnter={() => soundEngine.speakHover(`Seta para ${btn.label}`)}
-                onClick={() => addCommand(btn.cmd)}
-                className={`hc-button min-h-[54px] min-w-[64px] px-3 rounded-2xl ${btn.color} font-extrabold flex flex-col items-center justify-center gap-0.5 shadow-md active:scale-95 disabled:opacity-40`}
-              >
-                {renderArrowIcon(btn.cmd, 'w-6 h-6')}
-                <span className="text-[11px]">{btn.label}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* 2. Fila de Comandos Compacta */}
-          <div className="flex-1 w-full rounded-2xl bg-slate-950 border border-slate-800 px-3 py-2 min-h-[54px] flex items-center gap-1.5 overflow-x-auto">
-            {commands.length === 0 ? (
-              <span className="text-xs text-slate-400 mx-auto">
-                Toque nas setas para programar os passos do Robô Bit (máx. 10)...
-              </span>
-            ) : (
-              commands.map((cmd, idx) => {
-                const isRunningStep = activeCmdIndex === idx;
-                const isBugStep = bugCmdIndex === idx;
-                return (
-                  <button
-                    key={idx}
-                    type="button"
-                    disabled={isRunning}
-                    onClick={() => {
-                      soundEngine.playTap();
-                      setCommands((prev) => prev.filter((_, i) => i !== idx));
-                      setBugCmdIndex(null);
-                    }}
-                    className={`min-h-[44px] min-w-[44px] px-2 rounded-xl border-2 flex flex-col items-center justify-center shrink-0 transition-all ${
-                      isBugStep
-                        ? 'bg-amber-400/25 border-amber-400 text-amber-300 scale-110 animate-guide-glow'
-                        : isRunningStep
-                        ? 'bg-emerald-500/30 border-emerald-400 text-white scale-110'
-                        : 'bg-slate-900 border-slate-700 text-slate-200 hover:border-rose-400'
-                    }`}
-                    title="Toque para remover este passo"
-                  >
-                    <span className="text-[9px] font-mono text-slate-400 tabular-nums">
-                      {idx + 1}
-                    </span>
-                    {renderArrowIcon(cmd, 'w-4 h-4')}
-                  </button>
-                );
-              })
-            )}
-          </div>
-
-          {/* 3. Botões Reiniciar e Executar */}
-          <div className="flex items-center gap-2 shrink-0">
+          {onOpenSettings && (
             <button
               type="button"
               onClick={() => {
                 soundEngine.playTap();
-                resetRobotToStart(level, true);
+                onOpenSettings();
               }}
-              className="hc-button min-h-[52px] px-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5"
-              title="Limpar fila e voltar ao início"
+              className="hc-button min-h-[48px] px-3.5 rounded-2xl bg-slate-900/95 hover:bg-slate-800 border-2 border-slate-600 hover:border-amber-400 text-slate-100 font-bold text-xs flex items-center gap-1.5 shadow-xl"
+              title="Configurações de Áudio, Narração e Volumes"
+              aria-label="Abrir Configurações"
             >
-              {commands.length > 0 ? (
-                <Trash2 className="w-5 h-5 text-rose-400" />
-              ) : (
-                <RotateCcw className="w-5 h-5" />
-              )}
-              <span className="hidden sm:inline">Limpar</span>
+              <Settings className="w-5 h-5 text-amber-400" />
+              <span className="hidden lg:inline">Configurações</span>
             </button>
-
-            <button
-              type="button"
-              disabled={isRunning}
-              onClick={executeAlgorithm}
-              className="hc-button min-h-[52px] px-5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-extrabold text-sm md:text-base flex items-center gap-2 shadow-lg active:scale-95 whitespace-nowrap"
-            >
-              <Play className="w-5 h-5 fill-slate-950" />
-              <span>Executar!</span>
-            </button>
-          </div>
+          )}
         </div>
-      </DraggableMinimizableDock>
+      </header>
+
+      {/* Dock Flutuante Inferior Arrastável e Minimizável de Programação (oculto na celebração) */}
+      {!showCelebration && (
+        <DraggableMinimizableDock
+          title={`Programação do Robô Bit (${commands.length}/10 passos)`}
+          minimizedLabel="Mostrar Painel de Programação"
+          maxWidthClass="max-w-5xl"
+        >
+          <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+            {/* 1. Botões Direcionais */}
+            <div className="flex items-center gap-2 shrink-0">
+              {(
+                [
+                  { cmd: 'UP', label: 'Cima', color: 'bg-sky-500 hover:bg-sky-400 text-slate-950' },
+                  { cmd: 'RIGHT', label: 'Direita', color: 'bg-emerald-500 hover:bg-emerald-400 text-slate-950' },
+                  { cmd: 'DOWN', label: 'Baixo', color: 'bg-amber-400 hover:bg-amber-300 text-slate-950' },
+                  { cmd: 'LEFT', label: 'Esquerda', color: 'bg-purple-400 hover:bg-purple-300 text-slate-950' },
+                ] as const
+              ).map((btn) => (
+                <button
+                  key={btn.cmd}
+                  type="button"
+                  disabled={isRunning}
+                  onMouseEnter={() => soundEngine.speakHover(`Seta para ${btn.label}`)}
+                  onClick={() => addCommand(btn.cmd)}
+                  className={`hc-button min-h-[54px] min-w-[64px] px-3 rounded-2xl ${btn.color} font-extrabold flex flex-col items-center justify-center gap-0.5 shadow-md active:scale-95 disabled:opacity-40`}
+                >
+                  {renderArrowIcon(btn.cmd, 'w-6 h-6')}
+                  <span className="text-[11px]">{btn.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* 2. Fila de Comandos Compacta */}
+            <div className="flex-1 w-full rounded-2xl bg-slate-950 border border-slate-800 px-3 py-2 min-h-[54px] flex items-center gap-1.5 overflow-x-auto">
+              {commands.length === 0 ? (
+                <span className="text-xs text-slate-400 mx-auto">
+                  Toque nas setas para programar os passos do Robô Bit (máx. 10)...
+                </span>
+              ) : (
+                commands.map((cmd, idx) => {
+                  const isRunningStep = activeCmdIndex === idx;
+                  const isBugStep = bugCmdIndex === idx;
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      disabled={isRunning}
+                      onClick={() => {
+                        soundEngine.playTap();
+                        setCommands((prev) => prev.filter((_, i) => i !== idx));
+                        setBugCmdIndex(null);
+                      }}
+                      className={`min-h-[44px] min-w-[44px] px-2 rounded-xl border-2 flex flex-col items-center justify-center shrink-0 transition-all ${
+                        isBugStep
+                          ? 'bg-amber-400/25 border-amber-400 text-amber-300 scale-110 animate-guide-glow'
+                          : isRunningStep
+                          ? 'bg-emerald-500/30 border-emerald-400 text-white scale-110'
+                          : 'bg-slate-900 border-slate-700 text-slate-200 hover:border-rose-400'
+                      }`}
+                      title="Toque para remover este passo"
+                    >
+                      <span className="text-[9px] font-mono text-slate-400 tabular-nums">
+                        {idx + 1}
+                      </span>
+                      {renderArrowIcon(cmd, 'w-4 h-4')}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            {/* 3. Botões Reiniciar e Executar */}
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playTap();
+                  resetRobotToStart(level, true);
+                }}
+                className="hc-button min-h-[52px] px-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5"
+                title="Limpar fila e voltar ao início"
+              >
+                {commands.length > 0 ? (
+                  <Trash2 className="w-5 h-5 text-rose-400" />
+                ) : (
+                  <RotateCcw className="w-5 h-5" />
+                )}
+                <span className="hidden sm:inline">Limpar</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isRunning}
+                onClick={executeAlgorithm}
+                className="hc-button min-h-[52px] px-5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-extrabold text-sm md:text-base flex items-center gap-2 shadow-lg active:scale-95 whitespace-nowrap"
+              >
+                <Play className="w-5 h-5 fill-slate-950" />
+                <span>Executar!</span>
+              </button>
+            </div>
+          </div>
+        </DraggableMinimizableDock>
+      )}
 
       {showIntro && (
         <GameIntroModal
@@ -524,25 +572,155 @@ export const Game6ProgrameBit: React.FC<Game6Props> = ({
         />
       )}
 
+      {/* Vitrine 2 Colunas Lado a Lado: Tabuleiro 3D & Robô Bit (Esquerda) + Box de Parabéns (Direita) */}
       {showCelebration && (
-        <CelebrationOverlay
-          levelCompleted={level}
-          message="Uau! Seu programa funcionou perfeitamente e levou o Robô Bit direto até a estrela!"
-          onNextLevel={
-            level < 3
-              ? () => {
-                  setLevel((level + 1) as 1 | 2 | 3);
-                  setShowCelebration(false);
-                }
-              : undefined
-          }
-          onReplay={() => {
-            resetRobotToStart(level, true);
-            setShowCelebration(false);
-          }}
-          onBackHub={onBackHub}
-        />
+        <div
+          className="fixed inset-0 z-40 pointer-events-none flex flex-col md:flex-row items-center justify-between p-4 md:px-8 md:pt-20 md:pb-6 gap-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Parabéns! Algoritmo 3D Concluído"
+        >
+          {/* Coluna Esquerda: Controles Interativos do Tabuleiro & Robô Bit 3D */}
+          <div className="w-full md:w-7/12 h-full flex flex-col justify-between items-center py-2">
+            <div className="pointer-events-auto hc-surface bg-slate-950/90 border-2 border-yellow-400/70 rounded-2xl px-4 py-2.5 shadow-2xl flex items-center gap-2.5 max-w-lg">
+              <Sparkles className="w-5 h-5 text-amber-400 shrink-0 animate-spin" />
+              <p className="text-xs md:text-sm font-extrabold text-yellow-100">
+                {celebrationFeedback}
+              </p>
+            </div>
+
+            <div className="pointer-events-auto hc-surface bg-slate-950/92 border border-slate-700/90 rounded-3xl p-3 shadow-2xl flex flex-col items-center gap-2.5 max-w-xl w-full">
+              <div className="flex flex-wrap items-center justify-center gap-2 w-full">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playRobotBeepBop();
+                    setCelebrationPulseCount((c) => c + 1);
+                    setCelebrationFeedback('Bip-Bop-Buzzz! O Robô Bit acendeu as luzes e comemorou na estrela!');
+                  }}
+                  className="hc-button min-h-[46px] px-4 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs md:text-sm flex items-center gap-2 shadow-lg active:scale-95"
+                >
+                  <Lightbulb className="w-4 h-4" />
+                  <span>Acender Luzes &amp; Bip-Bop!</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playSparkle();
+                    setCelebrationPulseCount((c) => c + 1);
+                    setCelebrationFeedback('Super Pulo da Vitória 3D ativado no Tabuleiro de Mármore!');
+                  }}
+                  className="hc-button min-h-[46px] px-4 rounded-2xl bg-sky-400 hover:bg-sky-300 text-slate-950 font-extrabold text-xs md:text-sm flex items-center gap-2 shadow-lg active:scale-95"
+                >
+                  <Zap className="w-4 h-4" />
+                  <span>Pulo da Vitória 3D!</span>
+                </button>
+              </div>
+
+              <div className="flex items-center justify-center gap-2 bg-slate-900/90 border border-slate-800 rounded-2xl px-3 py-1.5">
+                <button
+                  type="button"
+                  onClick={() => rotateBoardBounded(-15)}
+                  className="hc-button min-h-[38px] px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1"
+                  title="Girar um pouquinho para a esquerda"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-yellow-400" />
+                  <span>Girar Esq.</span>
+                </button>
+
+                <span className="text-[11px] font-mono font-bold text-amber-300 px-2 tabular-nums">
+                  {celebrationAngleDeg}°
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => rotateBoardBounded(15)}
+                  className="hc-button min-h-[38px] px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1"
+                  title="Girar um pouquinho para a direita"
+                >
+                  <span>Girar Dir.</span>
+                  <RotateCcw className="w-3.5 h-3.5 text-yellow-400 -scale-x-100" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Coluna Direita: Box de Parabéns Lado a Lado */}
+          <div className="pointer-events-auto w-full md:w-5/12 max-w-md hc-surface rounded-3xl bg-slate-900/95 border-2 border-amber-400/70 p-6 md:p-7 text-center shadow-2xl">
+            <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-amber-400/20 border-2 border-amber-400 flex items-center justify-center animate-bounce">
+              <Star className="w-9 h-9 text-amber-400 fill-amber-400" />
+            </div>
+
+            <span className="inline-flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-amber-300 bg-amber-500/15 border border-amber-400/40 px-3 py-1 rounded-full mb-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
+              Fase {level} Concluída!
+            </span>
+
+            <h2 className="text-xl md:text-2xl font-extrabold font-display text-white mb-2">
+              Parabéns! Estrela Ganha!
+            </h2>
+
+            <p className="text-slate-200 text-xs md:text-sm leading-relaxed mb-4">
+              &ldquo;Uau! Seu programa de {commands.length} passos funcionou perfeitamente e levou o Robô Bit direto até a estrela dourada ao lado!&rdquo;
+            </p>
+
+            <div className="rounded-2xl bg-slate-950/90 border border-slate-800 p-3 mb-5 text-left text-xs text-slate-300 space-y-1">
+              <div className="font-extrabold text-yellow-300">
+                🤖 Experimente no Tabuleiro 3D ao lado:
+              </div>
+              <p>• Toque no <strong>Robô Bit 3D</strong> para ele dar um pulo com faíscas;</p>
+              <p>• Clique em <strong>Acender Luzes &amp; Bip-Bop</strong> para ouvir o som;</p>
+              <p>• Use os botões para <strong>girar o tabuleiro um pouquinho (±45°)</strong>.</p>
+            </div>
+
+            <div className="flex flex-col gap-2.5">
+              {level < 3 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playTap();
+                    setLevel((level + 1) as 1 | 2 | 3);
+                    setShowCelebration(false);
+                  }}
+                  className="hc-button w-full min-h-[52px] rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-base flex items-center justify-center gap-2 shadow-lg active:scale-95"
+                >
+                  <span>Próxima Fase</span>
+                  <ArrowRight className="w-5 h-5" />
+                </button>
+              )}
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playTap();
+                    resetRobotToStart(level, true);
+                    setShowCelebration(false);
+                  }}
+                  className="hc-button min-h-[46px] rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold text-xs md:text-sm flex items-center justify-center gap-2"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Jogar de Novo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playTap();
+                    onBackHub();
+                  }}
+                  className="hc-button min-h-[46px] rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold text-xs md:text-sm flex items-center justify-center gap-2"
+                >
+                  <Home className="w-4 h-4 text-sky-400" />
+                  <span>Início</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
 };
+

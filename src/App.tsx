@@ -10,6 +10,7 @@ import {
   Accessibility,
   WifiOff,
   Sparkles,
+  Settings,
 } from 'lucide-react';
 import {
   EduGamesProgress,
@@ -26,6 +27,7 @@ import { ThreeBitStage } from './components/ThreeBitStage';
 import { CharacterAvatarSvg } from './components/CharacterAvatarSvg';
 import { TeacherPanelModal } from './components/TeacherPanelModal';
 import { AccessibilitySmartModal } from './components/AccessibilitySmartModal';
+import { GameSettingsModal } from './components/GameSettingsModal';
 import { Game1MonteAmiguinho } from './games/Game1MonteAmiguinho';
 import { Game2QuebraCabeca } from './games/Game2QuebraCabeca';
 import { Game3PinteRegras } from './games/Game3PinteRegras';
@@ -116,16 +118,22 @@ export default function App() {
   const [dockCollapsed, setDockCollapsed] = useState(false);
   const [showAccessibilityModal, setShowAccessibilityModal] = useState(false);
   const [showTeacherModal, setShowTeacherModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showIOSInstallModal, setShowIOSInstallModal] = useState(false);
 
   const { isInstallable, isInstalled, isIOS, isOnline, install } = usePWAInstall();
 
   useEffect(() => {
     soundEngine.setSettings(
-      progress.settings.voiceVolume,
-      progress.settings.sfxMuted,
+      progress.settings.voiceVolume ?? 0.9,
+      progress.settings.sfxMuted ?? false,
       progress.settings.speechRate ?? 0.95,
-      progress.settings.hoverSpeech ?? false
+      progress.settings.hoverSpeech ?? false,
+      progress.settings.narrationEnabled ?? false,
+      progress.settings.autoNarration ?? false,
+      progress.settings.masterVolume ?? 1.0,
+      progress.settings.sfxVolume ?? 0.85,
+      progress.settings.fanfareVolume ?? 0.85
     );
     document.documentElement.setAttribute(
       'data-high-contrast',
@@ -262,6 +270,7 @@ export default function App() {
           onRecordHint={() => handleRecordHint('monte-amiguinho')}
           onSaveCustomAvatar={handleSaveCustomAvatar}
           onBackHub={handleBackToHub}
+          onOpenSettings={() => setShowSettingsModal(true)}
         />
       );
     }
@@ -276,6 +285,7 @@ export default function App() {
           onRecordAttempt={() => handleRecordAttempt('quebra-cabeca')}
           onRecordHint={() => handleRecordHint('quebra-cabeca')}
           onBackHub={handleBackToHub}
+          onOpenSettings={() => setShowSettingsModal(true)}
         />
       );
     }
@@ -293,6 +303,7 @@ export default function App() {
           onBackHub={handleBackToHub}
           onOpenAccessibility={() => setShowAccessibilityModal(true)}
           onOpenTeacher={() => setShowTeacherModal(true)}
+          onOpenSettings={() => setShowSettingsModal(true)}
         />
       );
     }
@@ -310,6 +321,7 @@ export default function App() {
           onBackHub={handleBackToHub}
           onOpenAccessibility={() => setShowAccessibilityModal(true)}
           onOpenTeacher={() => setShowTeacherModal(true)}
+          onOpenSettings={() => setShowSettingsModal(true)}
         />
       );
     }
@@ -324,6 +336,7 @@ export default function App() {
           onRecordAttempt={() => handleRecordAttempt('continue-sequencia')}
           onRecordHint={() => handleRecordHint('continue-sequencia')}
           onBackHub={handleBackToHub}
+          onOpenSettings={() => setShowSettingsModal(true)}
         />
       );
     }
@@ -338,6 +351,7 @@ export default function App() {
           onRecordAttempt={() => handleRecordAttempt('programe-bit')}
           onRecordHint={() => handleRecordHint('programe-bit')}
           onBackHub={handleBackToHub}
+          onOpenSettings={() => setShowSettingsModal(true)}
         />
       );
     }
@@ -363,7 +377,7 @@ export default function App() {
               accentColor={progress.customAvatar.accentColor}
               onRobotClick={() => {
                 soundEngine.playVictoryFanfare();
-                soundEngine.speak(
+                soundEngine.speakManual(
                   'Oi amiguinho! Eu sou o Robô Bit! Toque em qualquer brinquedo 3D sobre a mesa de mármore ou nos cartões abaixo para brincar!'
                 );
               }}
@@ -414,7 +428,7 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   soundEngine.playTap();
-                  soundEngine.speak(`Você já conquistou ${totalStarsEarned} estrelas de 18!`);
+                  soundEngine.speakManual(`Você já conquistou ${totalStarsEarned} estrelas de 18!`);
                 }}
                 className="hc-surface min-h-[48px] px-4 py-2 rounded-2xl bg-slate-900/95 border border-slate-700 flex items-center gap-2 shadow-2xl"
                 title="Estrelas conquistadas"
@@ -495,7 +509,25 @@ export default function App() {
                 title="Abrir Fundamentação Pedagógica (BNCC Computação) e Relatório Formativo"
               >
                 <GraduationCap className="w-5 h-5 text-amber-400" />
-                <span>Pedagógico (BNCC)</span>
+                <span className="hidden md:inline">Pedagógico (BNCC)</span>
+              </button>
+
+              {/* Ícone de Engrenagem no Topo Direito: Configurações de Narrações, Sons e Volumes Individuais */}
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playTap();
+                  setShowSettingsModal(true);
+                }}
+                onMouseEnter={() =>
+                  soundEngine.speakHover('Configurações de Áudio, Narrações e Volumes')
+                }
+                className="hc-button min-h-[48px] px-3.5 rounded-2xl bg-slate-900/95 hover:bg-slate-800 border-2 border-slate-600 hover:border-amber-400 text-slate-100 flex items-center gap-2 shadow-2xl text-xs font-extrabold whitespace-nowrap transition-all"
+                aria-label="Abrir Configurações de Áudio, Narração e Volumes"
+                title="Configurações: Ativar/Desativar Narrações, Sons do Jogo e Volumes Individuais"
+              >
+                <Settings className="w-5 h-5 text-amber-400" />
+                <span>Configurações</span>
               </button>
             </div>
           </header>
@@ -521,7 +553,7 @@ export default function App() {
                   type="button"
                   onClick={() => {
                     soundEngine.playTap();
-                    soundEngine.speak(
+                    soundEngine.speakManual(
                       'Toque em um dos seis brinquedos 3D sobre a mesa de mármore ou escolha um cartão brilhante abaixo!'
                     );
                   }}
@@ -597,7 +629,7 @@ export default function App() {
                             onClick={(e) => {
                               e.stopPropagation();
                               soundEngine.playTap();
-                              soundEngine.speak(game.spokenName);
+                              soundEngine.speakManual(game.spokenName);
                             }}
                             className="p-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-sky-400"
                             title="Ouvir nome do jogo"
@@ -663,6 +695,15 @@ export default function App() {
           progress={progress}
           onResetProgress={() => setProgress(resetAllProgress())}
           onClose={() => setShowTeacherModal(false)}
+        />
+      )}
+
+      {/* PAINEL DE CONFIGURAÇÕES DE ÁUDIO, NARRAÇÕES E VOLUMES INDIVIDUAIS (Ícone Engrenagem) */}
+      {showSettingsModal && (
+        <GameSettingsModal
+          settings={progress.settings}
+          onUpdateSettings={handleUpdateSettings}
+          onClose={() => setShowSettingsModal(false)}
         />
       )}
     </>

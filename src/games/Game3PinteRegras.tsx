@@ -9,9 +9,15 @@ import {
   Sparkles,
   Accessibility,
   GraduationCap,
+  Settings,
+  Star,
+  ArrowRight,
+  Lightbulb,
+  Zap,
+  RotateCw,
 } from 'lucide-react';
 import { CustomAvatarConfig, AppSettings } from '../utils/storage';
-import { GameIntroModal, CelebrationOverlay } from '../components/GameIntroModal';
+import { GameIntroModal } from '../components/GameIntroModal';
 import { DraggableMinimizableDock } from '../components/DraggableMinimizableDock';
 import { soundEngine } from '../utils/soundAndSpeech';
 import {
@@ -32,6 +38,7 @@ interface Game3Props {
   onBackHub: () => void;
   onOpenAccessibility?: () => void;
   onOpenTeacher?: () => void;
+  onOpenSettings?: () => void;
 }
 
 type DrawingId = 'balloon' | 'house' | 'car';
@@ -307,6 +314,7 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
   onBackHub,
   onOpenAccessibility,
   onOpenTeacher,
+  onOpenSettings,
 }) => {
   const [showIntro, setShowIntro] = useState(true);
   const [level, setLevel] = useState<1 | 2 | 3>(1);
@@ -320,6 +328,53 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
   const [freeHistory, setFreeHistory] = useState<Array<{ regionName: string; colorName: string }>>([]);
   const [showCelebration, setShowCelebration] = useState(false);
 
+  // Estados de Interação com a Escultura 3D Pintada (Coluna Esquerda na Celebração)
+  const [sculptureYawDeg, setSculptureYawDeg] = useState(0);
+  const [sculptureLightsActive, setSculptureLightsActive] = useState(false);
+  const [sculptureFeedbackText, setSculptureFeedbackText] = useState(
+    'Toque na sua Escultura 3D pintada para fazê-la pular, brilhar ou girar um pouquinho!'
+  );
+
+  const interactionRef = useRef({
+    bounceTimeLeft: 0,
+    glowPulseTimeLeft: 0,
+    targetYawRad: 0,
+    currentYawRad: 0,
+    triggerBurstRequest: null as { pos: [number, number, number]; color: string } | null,
+  });
+
+  const triggerSculptureLights = () => {
+    setSculptureLightsActive((v) => !v);
+    interactionRef.current.glowPulseTimeLeft = 2.6;
+    interactionRef.current.triggerBurstRequest = {
+      pos: [0, 1.25, -0.45],
+      color: '#FACC15',
+    };
+    soundEngine.playPaintBrushSplash();
+    setSculptureFeedbackText('✨ Brilho Mágico 3D! Veja como as cores vivas da sua escultura reluzem!');
+  };
+
+  const triggerSculptureBounce = () => {
+    interactionRef.current.bounceTimeLeft = 2.2;
+    interactionRef.current.glowPulseTimeLeft = 1.8;
+    interactionRef.current.triggerBurstRequest = {
+      pos: [0, 1.15, -0.45],
+      color: '#38BDF8',
+    };
+    soundEngine.playRobotBipBop('limbs');
+    setSculptureFeedbackText('🎉 Uhuuul! Sua escultura 3D ganhou vida e está pulando de alegria!');
+  };
+
+  const rotateSculptureLimited = (deltaDeg: number) => {
+    soundEngine.playRobotBipBop('spin');
+    setSculptureYawDeg((prev) => {
+      const clamped = Math.max(-55, Math.min(55, prev + deltaDeg));
+      interactionRef.current.targetYawRad = THREE.MathUtils.degToRad(clamped);
+      return clamped;
+    });
+    setSculptureFeedbackText('🔄 Girando o torno dourado para você admirar sua pintura 3D!');
+  };
+
   const mountRef = useRef<HTMLDivElement | null>(null);
 
   const schema = DRAWING_SCHEMAS[drawing];
@@ -328,10 +383,17 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
   const isRightColorSelected =
     level === 3 || (activeExpectedStep && selectedColor.id === activeExpectedStep.colorId);
 
-  const speakCurrentAlgorithm = (lvl: 1 | 2 | 3, drw: DrawingId, stepIdx: number) => {
+  const speakCurrentAlgorithm = (
+    lvl: 1 | 2 | 3,
+    drw: DrawingId,
+    stepIdx: number,
+    manual: boolean = false
+  ) => {
+    const speakFn = (msg: string) =>
+      manual ? soundEngine.speakManual(msg) : soundEngine.speak(msg);
     const sc = DRAWING_SCHEMAS[drw];
     if (lvl === 3) {
-      soundEngine.speak(
+      speakFn(
         'Ateliê de pintura 3D livre! Mova o pincel 3D com o mouse, escolha qualquer tinta viva e pinte o brinquedo!'
       );
       return;
@@ -340,7 +402,7 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
     const current = list[stepIdx];
     if (!current) return;
     const prefix = stepIdx === 0 ? 'Primeiro passo:' : `Passo número ${stepIdx + 1}:`;
-    soundEngine.speak(
+    speakFn(
       `${prefix} pegue a tinta ${current.colorName} e pinte ${current.regionName}!`
     );
   };
@@ -351,6 +413,11 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
     setHintActive(false);
     setFreeHistory([]);
     setShowCelebration(false);
+    setSculptureYawDeg(0);
+    setSculptureLightsActive(false);
+    interactionRef.current.targetYawRad = 0;
+    interactionRef.current.currentYawRad = 0;
+    interactionRef.current.bounceTimeLeft = 0;
     const sc = DRAWING_SCHEMAS[drw];
     const firstStep = (lvl === 1 ? sc.level1Steps : sc.level2Steps)[0];
     if (firstStep && lvl !== 3) {
@@ -417,7 +484,16 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
     const nextIdx = stateRef.current.currentStepIndex + 1;
     if (nextIdx >= activeSteps.length) {
       onCompleteLevel(stateRef.current.level);
-      window.setTimeout(() => setShowCelebration(true), 900);
+      window.setTimeout(() => {
+        setShowCelebration(true);
+        setSculptureLightsActive(true);
+        interactionRef.current.bounceTimeLeft = 2.2;
+        interactionRef.current.glowPulseTimeLeft = 2.8;
+        soundEngine.playVictoryFanfare();
+        soundEngine.speak(
+          'Sua escultura 3D ficou com cores vivas e brilhantes! Brinque com ela ao lado antes de avançar!'
+        );
+      }, 650);
     } else {
       setCurrentStepIndex(nextIdx);
       speakCurrentAlgorithm(stateRef.current.level, stateRef.current.drawing, nextIdx);
@@ -431,6 +507,8 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
     paintedRegions,
     currentStepIndex,
     hintActive,
+    showCelebration,
+    sculptureLightsActive,
     visualGuidePulse: settings?.visualGuidePulse ?? true,
     calmMode: settings?.calmMode ?? false,
     hoveredRegionId: null as string | null,
@@ -441,6 +519,7 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
     brushStrokeImpulse: 0,
     onPaintRegion: handlePaintRegion,
     onSelectColor: (_c: ColorOption) => {},
+    onInteractCompletedSculpture: () => {},
   });
 
   useEffect(() => {
@@ -450,9 +529,12 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
     stateRef.current.paintedRegions = paintedRegions;
     stateRef.current.currentStepIndex = currentStepIndex;
     stateRef.current.hintActive = hintActive;
+    stateRef.current.showCelebration = showCelebration;
+    stateRef.current.sculptureLightsActive = sculptureLightsActive;
     stateRef.current.visualGuidePulse = settings?.visualGuidePulse ?? true;
     stateRef.current.calmMode = settings?.calmMode ?? false;
     stateRef.current.onPaintRegion = handlePaintRegion;
+    stateRef.current.onInteractCompletedSculpture = triggerSculptureBounce;
     stateRef.current.onSelectColor = (c: ColorOption) => {
       soundEngine.playTap();
       stateRef.current.brushStrokeImpulse = 0.85;
@@ -861,9 +943,14 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
         }
       }
 
-      // 2. Clicou em uma parte da Escultura 3D para pintar
+      // 2. Clicou em uma parte da Escultura 3D para pintar (ou para brincar na celebração!)
       const sculpHits = raycaster.intersectObjects(sculptureGroup.children, true);
       if (sculpHits.length > 0) {
+        if (stateRef.current.showCelebration) {
+          sparkManager.triggerBurst(sculpHits[0].point, '#FACC15');
+          stateRef.current.onInteractCompletedSculpture();
+          return;
+        }
         const regId = sculpHits[0].object.userData?.regionId as string | undefined;
         if (regId) {
           const hitPt = sculpHits[0].point;
@@ -881,6 +968,7 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
     let isUnmounted = false;
     const clock = new THREE.Clock();
     const _worldTarget = new THREE.Vector3();
+    const currentLookAt = new THREE.Vector3(0, 0.82, 0.15);
 
     function afterDraw(cb: () => void) {
       if (isUnmounted) return;
@@ -905,14 +993,74 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
       const dt = Math.min(clock.getDelta(), 0.05);
       const elapsed = clock.getElapsedTime();
       const st = stateRef.current;
+      const inter = interactionRef.current;
 
       rebuildSculptureIfNeeded();
       updateEnvironment(elapsed);
       sparkManager.update(dt);
 
-      // Giro suave da escultura (mais lento no Modo Sensorial Calmo)
+      if (inter.triggerBurstRequest) {
+        sparkManager.triggerBurst(
+          new THREE.Vector3(...inter.triggerBurstRequest.pos),
+          inter.triggerBurstRequest.color
+        );
+        inter.triggerBurstRequest = null;
+      }
+
+      inter.bounceTimeLeft = Math.max(0, inter.bounceTimeLeft - dt);
+      inter.glowPulseTimeLeft = Math.max(0, inter.glowPulseTimeLeft - dt);
+      inter.currentYawRad = THREE.MathUtils.damp(
+        inter.currentYawRad,
+        inter.targetYawRad,
+        8,
+        dt
+      );
+
+      // Enquadramento de Câmera: Quando a fase conclui (`showCelebration`), enquadra a escultura 3D pintada na COLUNA ESQUERDA!
+      const isWideViewport = (container?.clientWidth || window.innerWidth) >= 768;
+      const targetCamPos =
+        st.showCelebration && isWideViewport
+          ? new THREE.Vector3(0.95, 2.75, 4.15)
+          : st.showCelebration
+          ? new THREE.Vector3(0, 2.95, 4.55)
+          : new THREE.Vector3(0, 3.65, 5.75);
+
+      const targetLookAt =
+        st.showCelebration && isWideViewport
+          ? new THREE.Vector3(1.05, 0.95, -0.45)
+          : st.showCelebration
+          ? new THREE.Vector3(0, 0.9, -0.45)
+          : new THREE.Vector3(0, 0.82, 0.15);
+
+      camera.position.x = THREE.MathUtils.damp(camera.position.x, targetCamPos.x, 5, dt);
+      camera.position.y = THREE.MathUtils.damp(camera.position.y, targetCamPos.y, 5, dt);
+      camera.position.z = THREE.MathUtils.damp(camera.position.z, targetCamPos.z, 5, dt);
+
+      currentLookAt.x = THREE.MathUtils.damp(currentLookAt.x, targetLookAt.x, 5, dt);
+      currentLookAt.y = THREE.MathUtils.damp(currentLookAt.y, targetLookAt.y, 5, dt);
+      currentLookAt.z = THREE.MathUtils.damp(currentLookAt.z, targetLookAt.z, 5, dt);
+      camera.lookAt(currentLookAt);
+
+      potsGroup.visible = !st.showCelebration;
+      brushGroup.visible = !st.showCelebration;
+
+      // Giro e pulo da escultura 3D
       const rotSpeed = st.calmMode ? 0.18 : 0.48;
-      sculptureGroup.rotation.y = Math.sin(elapsed * rotSpeed) * 0.38;
+      const bounceY =
+        inter.bounceTimeLeft > 0 ? Math.abs(Math.sin(elapsed * 12)) * 0.28 : 0;
+      sculptureGroup.position.y = THREE.MathUtils.damp(
+        sculptureGroup.position.y,
+        0.18 + bounceY,
+        12,
+        dt
+      );
+
+      if (st.showCelebration) {
+        sculptureGroup.rotation.y =
+          inter.currentYawRad + Math.sin(elapsed * 0.9) * 0.18;
+      } else {
+        sculptureGroup.rotation.y = Math.sin(elapsed * rotSpeed) * 0.38;
+      }
       turntable.rotation.y = sculptureGroup.rotation.y;
 
       // Atualiza o Pincel Mágico 3D acompanhando o mouse em tempo real!
@@ -944,7 +1092,6 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
         dt
       );
 
-      // Inclinação dinâmica do pincel conforme a velocidade do mouse + pincelada
       const targetRotZ =
         0.35 - THREE.MathUtils.clamp(st.brushVelX * 2.5, -0.45, 0.45) + strokeDip * 1.4;
       const targetRotX =
@@ -954,14 +1101,12 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
       st.brushVelX *= 0.85;
       st.brushVelZ *= 0.85;
 
-      // Verifica qual passo é esperado agora para guiar a criança com a Seta 3D Pulsante e Glow!
       const sc = DRAWING_SCHEMAS[st.drawing];
       const activeSteps = st.level === 1 ? sc.level1Steps : sc.level2Steps;
-      const expectedStep = st.level !== 3 ? activeSteps[st.currentStepIndex] : undefined;
+      const expectedStep = st.level !== 3 && !st.showCelebration ? activeSteps[st.currentStepIndex] : undefined;
       const needsColorPick =
         expectedStep && st.selectedColor.id !== expectedStep.colorId;
 
-      // Destaca os Potes de Tinta 3D
       potMeshes.forEach((pm) => {
         const isSel = pm.colorOpt.id === st.selectedColor.id;
         const isHov = pm.colorOpt.id === st.hoveredPotId;
@@ -980,7 +1125,11 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
         pm.group.scale.setScalar(THREE.MathUtils.damp(pm.group.scale.x, targetScale, 10, dt));
       });
 
-      // Atualiza cores vivas pintadas e Glow pulsante na parte alvo da Escultura 3D
+      const celebrationGlowBoost =
+        st.showCelebration && (st.sculptureLightsActive || inter.glowPulseTimeLeft > 0)
+          ? 0.22 + Math.abs(Math.sin(elapsed * 7)) * 0.25
+          : 0;
+
       Object.entries(regionMaterials).forEach(([regId, mat]) => {
         const paintedColorId = st.paintedRegions[regId];
         const paintedOpt = PALETTE.find((c) => c.id === paintedColorId);
@@ -994,9 +1143,8 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
           mat.color.set(paintedOpt.threeHex);
           mat.roughness = 0.22;
           mat.emissive.set(paintedOpt.threeHex);
-          mat.emissiveIntensity = isHoveredReg ? 0.22 : 0.06;
+          mat.emissiveIntensity = (isHoveredReg ? 0.22 : 0.08) + celebrationGlowBoost;
         } else if (isTargetReg) {
-          // Pulsa suavemente na cor esperada ou em dourado luminoso para mostrar onde clicar!
           const pulse = (Math.sin(elapsed * 6.5) + 1) * 0.5;
           mat.color.set('#FEF08A');
           mat.emissive.set(expectedStep?.colorHex || '#F59E0B');
@@ -1013,8 +1161,7 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
         }
       });
 
-      // Posiciona a Seta Dourada 3D Pulsante no Pote de Tinta correto OU na Parte da Escultura correta!
-      if ((st.visualGuidePulse || st.hintActive) && expectedStep) {
+      if (!st.showCelebration && (st.visualGuidePulse || st.hintActive) && expectedStep) {
         if (needsColorPick) {
           const targetPot = potMeshes.find((p) => p.colorOpt.id === expectedStep.colorId);
           if (targetPot) {
@@ -1133,7 +1280,10 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
 
           <button
             type="button"
-            onClick={() => speakCurrentAlgorithm(level, drawing, currentStepIndex)}
+            onClick={() => {
+              soundEngine.playTap();
+              speakCurrentAlgorithm(level, drawing, currentStepIndex, true);
+            }}
             onMouseEnter={() => soundEngine.speakHover('Ouvir passo atual')}
             className="hc-button min-h-[44px] px-3.5 rounded-2xl bg-slate-900/95 border border-sky-400/60 text-sky-300 font-bold text-xs flex items-center gap-1.5 shadow-xl"
           >
@@ -1178,240 +1328,257 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
               <GraduationCap className="w-4 h-4" />
             </button>
           )}
+
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.playTap();
+                onOpenSettings();
+              }}
+              className="hc-button min-h-[44px] px-3.5 rounded-2xl bg-slate-900/95 hover:bg-slate-800 border-2 border-slate-600 hover:border-amber-400 text-slate-100 font-bold text-xs flex items-center gap-1.5 shadow-xl"
+              title="Configurações de Áudio, Narração e Volumes"
+              aria-label="Abrir Configurações"
+            >
+              <Settings className="w-4 h-4 text-amber-400" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* FAIXA DE ALGORITMO / RECEITA DE PASSOS COM INDICAÇÃO VISUAL CLARA (ONDE LER / O QUE FAZER) */}
-      <div className="pointer-events-none absolute inset-x-0 top-16 md:top-18 px-3 flex flex-col items-center gap-1.5 z-10">
-        {level !== 3 ? (
-          <>
-            <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2 bg-slate-900/95 border-2 border-slate-700 rounded-2xl p-2 shadow-2xl">
-              {steps.map((step, idx) => {
-                const isDone = idx < currentStepIndex;
-                const isCurrent = idx === currentStepIndex;
-                return (
-                  <button
-                    key={step.regionId}
-                    type="button"
-                    onClick={() => {
-                      soundEngine.playTap();
-                      const col = PALETTE.find((c) => c.id === step.colorId);
-                      if (col && isCurrent) setSelectedColor(col);
-                      soundEngine.speak(
-                        `Passo ${idx + 1}: pinte ${step.regionName} de ${step.colorName}`
-                      );
-                    }}
-                    onMouseEnter={() =>
-                      soundEngine.speakHover(
-                        `Passo ${idx + 1}: ${step.regionName} na cor ${step.colorName}`
-                      )
-                    }
-                    className={`min-h-[46px] px-3.5 py-1.5 rounded-xl border-2 flex items-center gap-2 text-xs font-extrabold transition-all ${
-                      isDone
-                        ? 'bg-emerald-950/80 border-emerald-400 text-emerald-200'
-                        : isCurrent
-                        ? 'bg-amber-400/20 border-amber-300 text-white animate-guide-glow'
-                        : 'bg-slate-950/90 border-slate-800 text-slate-400 opacity-65'
-                    }`}
-                  >
-                    <span
-                      className={`w-5 h-5 rounded-full flex items-center justify-center tabular-nums text-[11px] font-black ${
+      {/* FAIXA DE ALGORITMO / RECEITA DE PASSOS COM INDICAÇÃO VISUAL CLARA (Oculta na Celebração) */}
+      {!showCelebration && (
+        <div className="pointer-events-none absolute inset-x-0 top-16 md:top-18 px-3 flex flex-col items-center gap-1.5 z-10">
+          {level !== 3 ? (
+            <>
+              <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2 bg-slate-900/95 border-2 border-slate-700 rounded-2xl p-2 shadow-2xl">
+                {steps.map((step, idx) => {
+                  const isDone = idx < currentStepIndex;
+                  const isCurrent = idx === currentStepIndex;
+                  return (
+                    <button
+                      key={step.regionId}
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playTap();
+                        const col = PALETTE.find((c) => c.id === step.colorId);
+                        if (col && isCurrent) setSelectedColor(col);
+                        soundEngine.speak(
+                          `Passo ${idx + 1}: pinte ${step.regionName} de ${step.colorName}`
+                        );
+                      }}
+                      onMouseEnter={() =>
+                        soundEngine.speakHover(
+                          `Passo ${idx + 1}: ${step.regionName} na cor ${step.colorName}`
+                        )
+                      }
+                      className={`min-h-[46px] px-3.5 py-1.5 rounded-xl border-2 flex items-center gap-2 text-xs font-extrabold transition-all ${
                         isDone
-                          ? 'bg-emerald-400 text-slate-950'
+                          ? 'bg-emerald-950/80 border-emerald-400 text-emerald-200'
                           : isCurrent
-                          ? 'bg-amber-400 text-slate-950'
-                          : 'bg-slate-800 text-slate-300'
+                          ? 'bg-amber-400/20 border-amber-300 text-white animate-guide-glow'
+                          : 'bg-slate-950/90 border-slate-800 text-slate-400 opacity-65'
                       }`}
                     >
-                      {isDone ? '✓' : idx + 1}
-                    </span>
-                    <span>{step.regionName}</span>
-                    <span
-                      style={{ backgroundColor: step.colorHex }}
-                      className="w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-black text-white shadow-sm"
-                    >
-                      {step.symbol}
-                    </span>
-                    {isCurrent && (
-                      <Volume2 className="w-4 h-4 text-amber-300 animate-pointer-bob" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Pista Visual Guiada em Tempo Real (Mostra o que fazer agora: 1º Tinta -> 2º Peça 3D) */}
-            {activeExpectedStep && (
-              <div className="pointer-events-auto rounded-full bg-slate-950/95 border border-amber-400/80 px-4 py-1 text-xs font-extrabold text-amber-200 flex items-center gap-2 shadow-xl">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                {!isRightColorSelected ? (
-                  <span>
-                    1º Passo: Toque no pote de tinta{' '}
-                    <strong className="text-white underline">
-                      {activeExpectedStep.colorName} ({activeExpectedStep.symbol})
-                    </strong>{' '}
-                    onde a seta 3D aponta!
-                  </span>
-                ) : (
-                  <span>
-                    2º Passo: Agora leve o pincel 3D e clique em{' '}
-                    <strong className="text-white underline">
-                      {activeExpectedStep.regionName}
-                    </strong>{' '}
-                    que está brilhando!
-                  </span>
-                )}
+                      <span
+                        className={`w-5 h-5 rounded-full flex items-center justify-center tabular-nums text-[11px] font-black ${
+                          isDone
+                            ? 'bg-emerald-400 text-slate-950'
+                            : isCurrent
+                            ? 'bg-amber-400 text-slate-950'
+                            : 'bg-slate-800 text-slate-300'
+                        }`}
+                      >
+                        {isDone ? '✓' : idx + 1}
+                      </span>
+                      <span>{step.regionName}</span>
+                      <span
+                        style={{ backgroundColor: step.colorHex }}
+                        className="w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-black text-white shadow-sm"
+                      >
+                        {step.symbol}
+                      </span>
+                      {isCurrent && (
+                        <Volume2 className="w-4 h-4 text-amber-300 animate-pointer-bob" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-            )}
-          </>
-        ) : (
-          <div className="pointer-events-auto flex items-center gap-3 bg-slate-900/95 border border-slate-700 rounded-2xl px-4 py-2 shadow-2xl">
-            <span className="text-xs font-bold text-sky-300">
-              Passos pintados em 3D: {freeHistory.length}
-            </span>
-            <button
-              type="button"
-              onClick={() => resetCanvas(3, drawing)}
-              className="min-h-[38px] px-3 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold flex items-center gap-1"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Limpar</span>
-            </button>
-            <button
-              type="button"
-              disabled={freeHistory.length < 2}
-              onClick={() => {
-                const recipeText = freeHistory
-                  .map(
-                    (item, i) =>
-                      `${i === 0 ? 'Primeiro' : 'Depois'} você pintou ${item.regionName} de ${item.colorName}`
-                  )
-                  .join('. ');
-                soundEngine.speak(`Que escultura 3D linda! ${recipeText}!`);
-                onCompleteLevel(3);
-                setShowCelebration(true);
-              }}
-              className="hc-button min-h-[38px] px-4 rounded-xl bg-emerald-500 disabled:opacity-40 text-slate-950 font-extrabold text-xs flex items-center gap-1.5"
-            >
-              <Check className="w-4 h-4" />
-              <span>Bit, Ler Minha Receita!</span>
-            </button>
-          </div>
-        )}
 
-        {/* Tooltip Flutuante quando o Pincel 3D passa sobre uma Peça ou Pote */}
-        {hoveredTargetLabel && (
-          <div className="rounded-xl bg-slate-900/95 border border-sky-400 px-3 py-1 text-xs font-extrabold text-sky-200 shadow-lg">
-            🖌️ {hoveredTargetLabel}
-          </div>
-        )}
-      </div>
-
-      {/* PAINEL INFERIOR ARRASTÁVEL E MINIMIZÁVEL (Pode minimizar ou mover para liberar 100% os Potes de Tinta 3D!) */}
-      <DraggableMinimizableDock
-        title="Ateliê 3D: Brinquedos, Cores Acessíveis e Partes"
-        minimizedLabel="🖌️ Abrir Controles de Pintura"
-        maxWidthClass="max-w-4xl"
-      >
-        <div className="flex flex-col gap-2.5">
-          {/* Linha 1: Seletor de Escultura 3D + Paleta Viva de Alto Contraste com Símbolos */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5">
-              {(
-                [
-                  { id: 'balloon', label: '🎈 Balão 3D' },
-                  { id: 'house', label: '🏠 Casa 3D' },
-                  { id: 'car', label: '🏎️ Carro 3D' },
-                ] as const
-              ).map((d) => (
-                <button
-                  key={d.id}
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playTap();
-                    setDrawing(d.id);
-                  }}
-                  className={`min-h-[40px] px-3 rounded-xl text-xs font-extrabold border transition-all ${
-                    drawing === d.id
-                      ? 'bg-amber-400 text-slate-950 border-white shadow-md'
-                      : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-600'
-                  }`}
-                >
-                  {d.label}
-                </button>
-              ))}
+              {activeExpectedStep && (
+                <div className="pointer-events-auto rounded-full bg-slate-950/95 border border-amber-400/80 px-4 py-1 text-xs font-extrabold text-amber-200 flex items-center gap-2 shadow-xl">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  {!isRightColorSelected ? (
+                    <span>
+                      1º Passo: Toque no pote de tinta{' '}
+                      <strong className="text-white underline">
+                        {activeExpectedStep.colorName} ({activeExpectedStep.symbol})
+                      </strong>{' '}
+                      onde a seta 3D aponta!
+                    </span>
+                  ) : (
+                    <span>
+                      2º Passo: Agora leve o pincel 3D e clique em{' '}
+                      <strong className="text-white underline">
+                        {activeExpectedStep.regionName}
+                      </strong>{' '}
+                      que está brilhando!
+                    </span>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="pointer-events-auto flex items-center gap-3 bg-slate-900/95 border border-slate-700 rounded-2xl px-4 py-2 shadow-2xl">
+              <span className="text-xs font-bold text-sky-300">
+                Passos pintados em 3D: {freeHistory.length}
+              </span>
+              <button
+                type="button"
+                onClick={() => resetCanvas(3, drawing)}
+                className="min-h-[38px] px-3 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold flex items-center gap-1"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Limpar</span>
+              </button>
+              <button
+                type="button"
+                disabled={freeHistory.length < 2}
+                onClick={() => {
+                  const recipeText = freeHistory
+                    .map(
+                      (item, i) =>
+                        `${i === 0 ? 'Primeiro' : 'Depois'} você pintou ${item.regionName} de ${item.colorName}`
+                    )
+                    .join('. ');
+                  soundEngine.playVictoryFanfare();
+                  soundEngine.speak(`Que escultura 3D linda! ${recipeText}!`);
+                  onCompleteLevel(3);
+                  setShowCelebration(true);
+                  setSculptureLightsActive(true);
+                  interactionRef.current.bounceTimeLeft = 2.2;
+                }}
+                className="hc-button min-h-[38px] px-4 rounded-xl bg-emerald-500 disabled:opacity-40 text-slate-950 font-extrabold text-xs flex items-center gap-1.5"
+              >
+                <Check className="w-4 h-4" />
+                <span>Bit, Ler Minha Receita!</span>
+              </button>
             </div>
+          )}
 
-            {/* Paleta de Cores Vivas e Acessíveis (com Símbolos Geométricos) */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              {PALETTE.map((col) => {
-                const isSel = selectedColor.id === col.id;
-                const isNeededColor =
-                  level !== 3 &&
-                  activeExpectedStep?.colorId === col.id &&
-                  selectedColor.id !== col.id;
+          {hoveredTargetLabel && (
+            <div className="rounded-xl bg-slate-900/95 border border-sky-400 px-3 py-1 text-xs font-extrabold text-sky-200 shadow-lg">
+              🖌️ {hoveredTargetLabel}
+            </div>
+          )}
+        </div>
+      )}
 
-                return (
+      {/* PAINEL INFERIOR ARRASTÁVEL E MINIMIZÁVEL (Oculto na Celebração para liberar a visão 3D!) */}
+      {!showCelebration && (
+        <DraggableMinimizableDock
+          title="Ateliê 3D: Brinquedos, Cores Acessíveis e Partes"
+          minimizedLabel="🖌️ Abrir Controles de Pintura"
+          maxWidthClass="max-w-4xl"
+        >
+          <div className="flex flex-col gap-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                {(
+                  [
+                    { id: 'balloon', label: '🎈 Balão 3D' },
+                    { id: 'house', label: '🏠 Casa 3D' },
+                    { id: 'car', label: '🏎️ Carro 3D' },
+                  ] as const
+                ).map((d) => (
                   <button
-                    key={col.id}
+                    key={d.id}
                     type="button"
                     onClick={() => {
                       soundEngine.playTap();
-                      setSelectedColor(col);
-                      soundEngine.speak(`Tinta ${col.name}`);
+                      setDrawing(d.id);
                     }}
-                    onMouseEnter={() => soundEngine.speakHover(`Tinta ${col.name}`)}
-                    style={{ backgroundColor: col.hex }}
-                    className={`min-h-[40px] px-2.5 rounded-xl font-extrabold text-xs text-white flex items-center gap-1.5 transition-all shadow-md ${
-                      isSel
-                        ? 'ring-3 ring-white scale-105'
-                        : isNeededColor
-                        ? 'ring-3 ring-amber-300 animate-guide-glow'
-                        : 'opacity-90 hover:opacity-100'
+                    className={`min-h-[40px] px-3 rounded-xl text-xs font-extrabold border transition-all ${
+                      drawing === d.id
+                        ? 'bg-amber-400 text-slate-950 border-white shadow-md'
+                        : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-600'
                     }`}
-                    title={`Tinta ${col.name} (${col.symbol})`}
                   >
-                    <span className="w-5 h-5 rounded-full bg-slate-950/45 flex items-center justify-center text-xs font-black">
-                      {col.symbol}
-                    </span>
-                    <span className="hidden sm:inline drop-shadow">{col.name.split(' ')[0]}</span>
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                {PALETTE.map((col) => {
+                  const isSel = selectedColor.id === col.id;
+                  const isNeededColor =
+                    level !== 3 &&
+                    activeExpectedStep?.colorId === col.id &&
+                    selectedColor.id !== col.id;
+
+                  return (
+                    <button
+                      key={col.id}
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playTap();
+                        setSelectedColor(col);
+                        soundEngine.speak(`Tinta ${col.name}`);
+                      }}
+                      onMouseEnter={() => soundEngine.speakHover(`Tinta ${col.name}`)}
+                      style={{ backgroundColor: col.hex }}
+                      className={`min-h-[40px] px-2.5 rounded-xl font-extrabold text-xs text-white flex items-center gap-1.5 transition-all shadow-md ${
+                        isSel
+                          ? 'ring-3 ring-white scale-105'
+                          : isNeededColor
+                          ? 'ring-3 ring-amber-300 animate-guide-glow'
+                          : 'opacity-90 hover:opacity-100'
+                      }`}
+                      title={`Tinta ${col.name} (${col.symbol})`}
+                    >
+                      <span className="w-5 h-5 rounded-full bg-slate-950/45 flex items-center justify-center text-xs font-black">
+                        {col.symbol}
+                      </span>
+                      <span className="hidden sm:inline drop-shadow">{col.name.split(' ')[0]}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-1.5 pt-1 border-t border-slate-800/80">
+              {schema.allRegions.map((reg) => {
+                const isPainted = Boolean(paintedRegions[reg.id]);
+                const isTargetPart =
+                  level !== 3 &&
+                  isRightColorSelected &&
+                  activeExpectedStep?.regionId === reg.id;
+
+                return (
+                  <button
+                    key={reg.id}
+                    type="button"
+                    onClick={() => handlePaintRegion(reg.id)}
+                    onMouseEnter={() => soundEngine.speakHover(`Pintar ${reg.name}`)}
+                    className={`hc-button min-h-[40px] px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all ${
+                      isTargetPart
+                        ? 'bg-amber-400 text-slate-950 border-white font-extrabold animate-guide-glow'
+                        : isPainted
+                        ? 'bg-emerald-950/70 border-emerald-500/60 text-emerald-200'
+                        : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+                    }`}
+                  >
+                    <span>{isPainted ? '✓' : '🖌️'}</span>
+                    <span>{reg.name}</span>
                   </button>
                 );
               })}
             </div>
           </div>
-
-          {/* Linha 2: Botões rápidos das partes da Escultura 3D (com Glow na parte do passo atual) */}
-          <div className="flex flex-wrap items-center justify-center gap-1.5 pt-1 border-t border-slate-800/80">
-            {schema.allRegions.map((reg) => {
-              const isPainted = Boolean(paintedRegions[reg.id]);
-              const isTargetPart =
-                level !== 3 &&
-                isRightColorSelected &&
-                activeExpectedStep?.regionId === reg.id;
-
-              return (
-                <button
-                  key={reg.id}
-                  type="button"
-                  onClick={() => handlePaintRegion(reg.id)}
-                  onMouseEnter={() => soundEngine.speakHover(`Pintar ${reg.name}`)}
-                  className={`hc-button min-h-[40px] px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all ${
-                    isTargetPart
-                      ? 'bg-amber-400 text-slate-950 border-white font-extrabold animate-guide-glow'
-                      : isPainted
-                      ? 'bg-emerald-950/70 border-emerald-500/60 text-emerald-200'
-                      : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
-                  }`}
-                >
-                  <span>{isPainted ? '✓' : '🖌️'}</span>
-                  <span>{reg.name}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </DraggableMinimizableDock>
+        </DraggableMinimizableDock>
+      )}
 
       {showIntro && (
         <GameIntroModal
@@ -1428,21 +1595,156 @@ export const Game3PinteRegras: React.FC<Game3Props> = ({
         />
       )}
 
+      {/* CELEBRAÇÃO EM 2 COLUNAS LADO A LADO: ESCULTURA 3D PINTADA (ESQUERDA) + MODAL DE PARABÉNS (DIREITA) */}
       {showCelebration && (
-        <CelebrationOverlay
-          levelCompleted={level}
-          message="Sua escultura 3D ficou com cores vivas e brilhantes! Você seguiu todos os passos do algoritmo na ordem certa!"
-          onNextLevel={
-            level < 3
-              ? () => {
-                  setLevel((level + 1) as 1 | 2 | 3);
-                  setShowCelebration(false);
-                }
-              : undefined
-          }
-          onReplay={() => resetCanvas(level, drawing)}
-          onBackHub={onBackHub}
-        />
+        <div className="pointer-events-none fixed inset-0 z-30 flex flex-col md:flex-row items-center justify-between p-4 md:px-8 lg:px-14 pt-20 pb-6 gap-4">
+          {/* Confete festivo */}
+          <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
+            {Array.from({ length: 20 }, (_, i) => (
+              <div
+                key={i}
+                style={{
+                  left: `${(i * 100) / 20}%`,
+                  animationDelay: `${(i % 6) * 0.15}s`,
+                  backgroundColor: ['#FBBF24', '#38BDF8', '#34D399', '#F472B6', '#A78BFA'][i % 5],
+                  animation: 'confettiFall 2.8s ease-out forwards',
+                }}
+                className="absolute top-0 w-3.5 h-3.5 rounded-sm"
+              />
+            ))}
+          </div>
+
+          {/* COLUNA 1 (ESQUERDA): Exposição Interativa da Escultura 3D Pintada */}
+          <div className="w-full md:w-7/12 h-full flex flex-col justify-between items-center py-2">
+            <div className="pointer-events-auto hc-surface rounded-2xl bg-slate-900/95 border-2 border-amber-400 px-4 py-2 shadow-2xl flex items-center gap-2.5 animate-guide-glow">
+              <Sparkles className="w-5 h-5 text-amber-400 shrink-0" />
+              <span className="text-xs md:text-sm font-extrabold text-white">
+                {sculptureFeedbackText}
+              </span>
+            </div>
+
+            <div className="flex-1" />
+
+            <div className="pointer-events-auto hc-surface w-full max-w-xl rounded-3xl bg-slate-900/95 border-2 border-slate-700 p-3 shadow-2xl flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={triggerSculptureLights}
+                className="hc-button min-h-[48px] px-4 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs md:text-sm flex items-center gap-2 shadow-lg transition-transform active:scale-95"
+              >
+                <Lightbulb className="w-5 h-5" />
+                <span>Acender Brilho Mágico!</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={triggerSculptureBounce}
+                className="hc-button min-h-[48px] px-4 rounded-2xl bg-sky-400 hover:bg-sky-300 text-slate-950 font-extrabold text-xs md:text-sm flex items-center gap-2 shadow-lg transition-transform active:scale-95"
+              >
+                <Zap className="w-5 h-5" />
+                <span>Pulo de Alegria 3D!</span>
+              </button>
+
+              <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-2xl p-1">
+                <button
+                  type="button"
+                  onClick={() => rotateSculptureLimited(-20)}
+                  disabled={sculptureYawDeg <= -55}
+                  className="hc-button min-h-[40px] px-3 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 font-bold text-xs flex items-center gap-1"
+                >
+                  <RotateCcw className="w-4 h-4 text-amber-400" />
+                  <span>Girar Esq.</span>
+                </button>
+
+                <span className="text-[11px] font-mono text-amber-300 px-1.5 tabular-nums">
+                  {sculptureYawDeg > 0 ? `+${sculptureYawDeg}°` : `${sculptureYawDeg}°`}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => rotateSculptureLimited(20)}
+                  disabled={sculptureYawDeg >= 55}
+                  className="hc-button min-h-[40px] px-3 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 font-bold text-xs flex items-center gap-1"
+                >
+                  <span>Girar Dir.</span>
+                  <RotateCw className="w-4 h-4 text-amber-400" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* COLUNA 2 (DIREITA): Card de Parabéns! Estrela Ganha! */}
+          <div className="pointer-events-auto hc-surface w-full md:w-5/12 max-w-md rounded-3xl bg-slate-900/95 border-2 border-amber-400/80 p-6 md:p-7 text-center shadow-2xl">
+            <div className="mx-auto mb-3 w-20 h-20 rounded-full bg-amber-400/20 flex items-center justify-center animate-gentle-bounce">
+              <Star className="w-12 h-12 text-amber-400 fill-amber-400" />
+            </div>
+
+            <div className="flex items-center justify-center gap-1.5 text-amber-300 text-sm font-semibold mb-1">
+              <Sparkles className="w-4 h-4" />
+              <span>Fase {level} Concluída!</span>
+            </div>
+
+            <h3 className="text-2xl md:text-3xl font-bold text-white mb-2 font-display">
+              Parabéns! Estrela Ganha!
+            </h3>
+
+            <p className="text-sm md:text-base text-slate-200 mb-4">
+              “Sua escultura 3D ficou com cores vivas e brilhantes! Você seguiu todos os passos do algoritmo na ordem certa!”
+            </p>
+
+            <div className="rounded-2xl bg-slate-950/90 border border-slate-800 p-3 mb-5 text-left text-xs text-slate-300 space-y-1">
+              <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                <span>🎨</span>
+                <span>Experimente no Brinquedo 3D ao lado:</span>
+              </div>
+              <p>• Toque na <strong>Escultura 3D</strong> para vê-la pular no torno dourado;</p>
+              <p>• Clique em <strong>Acender Brilho Mágico</strong> para iluminar sua pintura;</p>
+              <p>• Use os botões de giro para admirar todos os ângulos (`±55°`).</p>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {level < 3 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playTap();
+                    setLevel((level + 1) as 1 | 2 | 3);
+                    setShowCelebration(false);
+                  }}
+                  className="hc-button w-full min-h-[54px] rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-lg flex items-center justify-center gap-2 transition-transform active:scale-95 whitespace-nowrap shadow-lg"
+                >
+                  <span>Próxima Fase</span>
+                  <ArrowRight className="w-6 h-6" />
+                </button>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playTap();
+                    resetCanvas(level, drawing);
+                  }}
+                  className="hc-button min-h-[48px] rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-sm flex items-center justify-center gap-2 transition-transform active:scale-95 whitespace-nowrap"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Jogar de Novo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playTap();
+                    onBackHub();
+                  }}
+                  className="hc-button min-h-[48px] rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 font-semibold text-sm flex items-center justify-center gap-2 transition-transform active:scale-95 whitespace-nowrap"
+                >
+                  <Home className="w-4 h-4" />
+                  <span>Início</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

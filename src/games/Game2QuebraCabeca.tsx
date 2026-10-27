@@ -12,6 +12,7 @@ import {
   ArrowRight,
   Lightbulb,
   Waves,
+  Settings,
 } from 'lucide-react';
 import { CustomAvatarConfig } from '../utils/storage';
 import { GameIntroModal } from '../components/GameIntroModal';
@@ -32,6 +33,7 @@ interface Game2Props {
   onRecordAttempt: () => void;
   onRecordHint: () => void;
   onBackHub: () => void;
+  onOpenSettings?: () => void;
 }
 
 type PuzzleTheme = 'rocket' | 'cake' | 'flower';
@@ -244,6 +246,7 @@ export const Game2QuebraCabeca: React.FC<Game2Props> = ({
   onRecordAttempt,
   onRecordHint,
   onBackHub,
+  onOpenSettings,
 }) => {
   const [showIntro, setShowIntro] = useState(true);
   const [level, setLevel] = useState<1 | 2 | 3>(1);
@@ -1177,6 +1180,22 @@ export const Game2QuebraCabeca: React.FC<Game2Props> = ({
                 <span>Dica</span>
               </button>
             </>
+          )}
+
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.playTap();
+                onOpenSettings();
+              }}
+              className="hc-button min-h-[48px] px-3.5 rounded-2xl bg-slate-900/95 hover:bg-slate-800 border-2 border-slate-600 hover:border-amber-400 text-slate-100 font-bold text-xs flex items-center gap-1.5 shadow-xl"
+              title="Configurações de Áudio, Narração e Volumes"
+              aria-label="Abrir Configurações"
+            >
+              <Settings className="w-5 h-5 text-amber-400" />
+              <span className="hidden lg:inline">Configurações</span>
+            </button>
           )}
         </div>
       </div>

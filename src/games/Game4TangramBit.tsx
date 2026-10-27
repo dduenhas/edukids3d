@@ -9,9 +9,14 @@ import {
   Sparkles,
   Accessibility,
   GraduationCap,
+  Settings,
+  Star,
+  ArrowRight,
+  Lightbulb,
+  Waves,
 } from 'lucide-react';
 import { CustomAvatarConfig, AppSettings } from '../utils/storage';
-import { GameIntroModal, CelebrationOverlay } from '../components/GameIntroModal';
+import { GameIntroModal } from '../components/GameIntroModal';
 import { DraggableMinimizableDock } from '../components/DraggableMinimizableDock';
 import { soundEngine } from '../utils/soundAndSpeech';
 import {
@@ -32,6 +37,7 @@ interface Game4Props {
   onBackHub: () => void;
   onOpenAccessibility?: () => void;
   onOpenTeacher?: () => void;
+  onOpenSettings?: () => void;
 }
 
 interface RawTangramPieceDef {
@@ -498,6 +504,7 @@ export const Game4TangramBit: React.FC<Game4Props> = ({
   onBackHub,
   onOpenAccessibility,
   onOpenTeacher,
+  onOpenSettings,
 }) => {
   const [showIntro, setShowIntro] = useState(true);
   const [level, setLevel] = useState<1 | 2 | 3>(1);
@@ -506,6 +513,49 @@ export const Game4TangramBit: React.FC<Game4Props> = ({
   const [pieceRotations, setPieceRotations] = useState<Record<string, number>>({});
   const [hintPieceId, setHintPieceId] = useState<string | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
+
+  // Estados de Interação com o Tangram 3D Pronto (Coluna Esquerda na Celebração)
+  const [tangramYawDeg, setTangramYawDeg] = useState(0);
+  const [tangramLightsActive, setTangramLightsActive] = useState(false);
+  const [tangramFeedbackText, setTangramFeedbackText] = useState(
+    'Toque nos blocos de madeira do seu Tangram 3D para fazer ondas, iluminar ou girar!'
+  );
+
+  const showCelebrationRef = useRef(false);
+  showCelebrationRef.current = showCelebration;
+
+  const interactionRef = useRef({
+    waveTimeLeft: 0,
+    lightPulseTimeLeft: 0,
+    targetYawRad: 0,
+    currentYawRad: 0,
+  });
+
+  const triggerTangramLights = () => {
+    setTangramLightsActive((v) => !v);
+    interactionRef.current.lightPulseTimeLeft = 2.6;
+    interactionRef.current.waveTimeLeft = 1.6;
+    sparksRef.current?.triggerBurst(new THREE.Vector3(0, 0.55, 0), '#FACC15');
+    soundEngine.playPaintBrushSplash();
+    setTangramFeedbackText('✨ Altar Dourado iluminado! Veja os blocos de madeira 3D brilhando!');
+  };
+
+  const triggerTangramWave = () => {
+    interactionRef.current.waveTimeLeft = 2.4;
+    sparksRef.current?.triggerBurst(new THREE.Vector3(0, 0.45, 0), '#34D399');
+    soundEngine.playWoodBlockSnap();
+    setTangramFeedbackText('🌊 Clack-Clack! Onda 3D passando pelos blocos de madeira do Tangram!');
+  };
+
+  const rotateTangramLimited = (deltaDeg: number) => {
+    soundEngine.playRobotBipBop('spin');
+    setTangramYawDeg((prev) => {
+      const clamped = Math.max(-45, Math.min(45, prev + deltaDeg));
+      interactionRef.current.targetYawRad = THREE.MathUtils.degToRad(clamped);
+      return clamped;
+    });
+    setTangramFeedbackText('🔄 Girando o altar 3D para você ver o relevo das peças de madeira!');
+  };
 
   const mountRef = useRef<HTMLDivElement | null>(null);
   const pieceMeshesRef = useRef<Map<string, THREE.Mesh>>(new Map());
@@ -539,6 +589,11 @@ export const Game4TangramBit: React.FC<Game4Props> = ({
     setSelectedPieceId(cfg.pieces[0]?.id || null);
     setHintPieceId(null);
     setShowCelebration(false);
+    setTangramYawDeg(0);
+    setTangramLightsActive(false);
+    interactionRef.current.targetYawRad = 0;
+    interactionRef.current.currentYawRad = 0;
+    interactionRef.current.waveTimeLeft = 0;
   };
 
   useEffect(() => {
@@ -586,6 +641,12 @@ export const Game4TangramBit: React.FC<Game4Props> = ({
         soundEngine.playVictoryFanfare();
         onCompleteLevel(level);
         setShowCelebration(true);
+        setTangramLightsActive(true);
+        interactionRef.current.waveTimeLeft = 2.6;
+        interactionRef.current.lightPulseTimeLeft = 2.6;
+        soundEngine.speak(
+          `Incrível! Você montou ${figConfig.title} com todas as formas geométricas 3D perfeitamente encaixadas!`
+        );
       }, 650);
     } else {
       soundEngine.speak(`Perfeito! ${piece.name} encaixada no lugar exato!`);
@@ -685,7 +746,7 @@ export const Game4TangramBit: React.FC<Game4Props> = ({
       const pieceMesh = createExtrudedTangramMesh(spec, false);
       pieceMesh.position.set(spec.trayX, 0.12, spec.trayZ);
       pieceMesh.userData = { pieceId: spec.id };
-      scene.add(pieceMesh);
+      boardGroup.add(pieceMesh);
       pieceMeshesRef.current.set(spec.id, pieceMesh);
     });
 
@@ -712,6 +773,12 @@ export const Game4TangramBit: React.FC<Game4Props> = ({
       const hits = raycaster.intersectObjects(meshes, true);
 
       if (hits.length > 0) {
+        if (showCelebrationRef.current) {
+          sparks.triggerBurst(hits[0].point, '#FACC15');
+          interactionRef.current.waveTimeLeft = 2.2;
+          soundEngine.playWoodBlockSnap();
+          return;
+        }
         let obj: THREE.Object3D | null = hits[0].object;
         while (obj && !obj.userData?.pieceId) {
           obj = obj.parent;
@@ -742,7 +809,7 @@ export const Game4TangramBit: React.FC<Game4Props> = ({
 
       const meshes = Array.from(pieceMeshesRef.current.values());
       const hits = raycaster.intersectObjects(meshes, true);
-      renderer.domElement.style.cursor = hits.length > 0 ? 'grab' : 'default';
+      renderer.domElement.style.cursor = hits.length > 0 ? 'pointer' : 'default';
     };
 
     const onPointerUp = (e: PointerEvent) => {
@@ -763,10 +830,8 @@ export const Game4TangramBit: React.FC<Game4Props> = ({
 
       const snapTolerance = settings?.motorAssist ? 1.45 : 1.05;
       if (distToTarget < snapTolerance && distMoved >= 12) {
-        // Arrastou diretamente até o molde no tabuleiro: encaixa e alinha automaticamente!
         snapPieceRef.current(spec, true);
       } else if (distMoved < 12) {
-        // Clicou rapidamente na peça na bandeja: tenta encaixar (ou avisa para girar se necessário)
         snapPieceRef.current(spec, false);
       }
     };
@@ -779,6 +844,7 @@ export const Game4TangramBit: React.FC<Game4Props> = ({
     let isUnmounted = false;
     const clock = new THREE.Clock();
     const _indicatorPos = new THREE.Vector3();
+    const currentLookAt = new THREE.Vector3(0, -0.05, 0.15);
 
     function afterDraw(cb: () => void) {
       if (isUnmounted) return;
@@ -802,19 +868,75 @@ export const Game4TangramBit: React.FC<Game4Props> = ({
       if (isUnmounted) return;
       const dt = Math.min(clock.getDelta(), 0.05);
       const elapsed = clock.getElapsedTime();
+      const isCeleb = showCelebrationRef.current;
+      const inter = interactionRef.current;
 
       env.updateEnvironment(elapsed);
       sparks.update(dt);
 
+      inter.waveTimeLeft = Math.max(0, inter.waveTimeLeft - dt);
+      inter.lightPulseTimeLeft = Math.max(0, inter.lightPulseTimeLeft - dt);
+      inter.currentYawRad = THREE.MathUtils.damp(
+        inter.currentYawRad,
+        inter.targetYawRad,
+        8,
+        dt
+      );
+
+      // Enquadramento de Câmera: Quando conclui (`isCeleb`), enquadra o Tangram 3D na COLUNA ESQUERDA!
+      const isWideViewport = (container?.clientWidth || window.innerWidth) >= 768;
+      const targetCamPos =
+        isCeleb && isWideViewport
+          ? new THREE.Vector3(1.12, 4.15, 4.35)
+          : isCeleb
+          ? new THREE.Vector3(0, 4.45, 4.65)
+          : new THREE.Vector3(0, 5.3, 5.1);
+
+      const targetLookAt =
+        isCeleb && isWideViewport
+          ? new THREE.Vector3(1.12, 0.15, 0.0)
+          : isCeleb
+          ? new THREE.Vector3(0, 0.1, 0.0)
+          : new THREE.Vector3(0, -0.05, 0.15);
+
+      camera.position.x = THREE.MathUtils.damp(camera.position.x, targetCamPos.x, 5, dt);
+      camera.position.y = THREE.MathUtils.damp(camera.position.y, targetCamPos.y, 5, dt);
+      camera.position.z = THREE.MathUtils.damp(camera.position.z, targetCamPos.z, 5, dt);
+
+      currentLookAt.x = THREE.MathUtils.damp(currentLookAt.x, targetLookAt.x, 5, dt);
+      currentLookAt.y = THREE.MathUtils.damp(currentLookAt.y, targetLookAt.y, 5, dt);
+      currentLookAt.z = THREE.MathUtils.damp(currentLookAt.z, targetLookAt.z, 5, dt);
+      camera.lookAt(currentLookAt);
+
+      // Ergue e inclina levemente o altar do Tangram na celebração como um troféu 3D!
+      boardGroup.position.y = THREE.MathUtils.damp(
+        boardGroup.position.y,
+        isCeleb ? 0.35 : 0,
+        6,
+        dt
+      );
+      boardGroup.rotation.x = THREE.MathUtils.damp(
+        boardGroup.rotation.x,
+        isCeleb ? 0.34 : 0,
+        6,
+        dt
+      );
+      boardGroup.rotation.y = THREE.MathUtils.damp(
+        boardGroup.rotation.y,
+        isCeleb ? inter.currentYawRad : 0,
+        8,
+        dt
+      );
+
       const activeId = hintPieceIdRef.current || selectedPieceIdRef.current;
       let indicatorTargetSpec: TangramPieceSpec | null = null;
 
-      cfg.pieces.forEach((spec) => {
+      cfg.pieces.forEach((spec, idx) => {
         const mesh = pieceMeshesRef.current.get(spec.id);
         const sil = silhouetteMeshesRef.current.get(spec.id);
         if (!mesh) return;
 
-        const isPlaced = placedIdsRef.current.includes(spec.id);
+        const isPlaced = placedIdsRef.current.includes(spec.id) || isCeleb;
         const isSelected = activeId === spec.id && !isPlaced;
 
         if (isSelected) {
@@ -833,10 +955,15 @@ export const Game4TangramBit: React.FC<Game4Props> = ({
 
         if (draggingId === spec.id) return;
 
+        const waveY =
+          isCeleb && inter.waveTimeLeft > 0
+            ? Math.max(0, Math.sin(elapsed * 9 - idx * 0.7)) * 0.22
+            : 0;
+
         const targetX = isPlaced ? spec.targetX : spec.trayX;
         const targetZ = isPlaced ? spec.targetZ : spec.trayZ;
         const targetY = isPlaced
-          ? 0.08
+          ? 0.08 + waveY
           : isSelected
           ? 0.28 + Math.sin(elapsed * 5.5) * 0.05
           : 0.11;
@@ -845,22 +972,14 @@ export const Game4TangramBit: React.FC<Game4Props> = ({
         mesh.position.y = THREE.MathUtils.damp(mesh.position.y, targetY, 10, dt);
         mesh.position.z = THREE.MathUtils.damp(mesh.position.z, targetZ, 10, dt);
 
-        // Para evitar que o quadrado pareça "girado" quando está em 90°/180°/270° e encaixa em 0°,
-        // usamos a rotação simétrica mais próxima ao encaixar!
         const deg = isPlaced ? spec.targetRotDeg : pieceRotationsRef.current[spec.id] || 0;
         const targetRotY = THREE.MathUtils.degToRad(deg);
         mesh.rotation.y = THREE.MathUtils.damp(mesh.rotation.y, targetRotY, 11, dt);
       });
 
-      if (indicatorTargetSpec && (settings?.visualGuidePulse ?? true)) {
+      if (!isCeleb && indicatorTargetSpec && (settings?.visualGuidePulse ?? true)) {
         const stSpec = indicatorTargetSpec as TangramPieceSpec;
-        // A seta 3D aponta para o molde exato no centro do tabuleiro quando a peça está sendo arrastada
-        // ou alterna suavemente para mostrar onde encaixar!
-        if (draggingId === stSpec.id) {
-          _indicatorPos.set(stSpec.targetX, 0.32, stSpec.targetZ);
-        } else {
-          _indicatorPos.set(stSpec.targetX, 0.32, stSpec.targetZ);
-        }
+        _indicatorPos.set(stSpec.targetX, 0.32, stSpec.targetZ);
         pointerIndicator3D.update(elapsed, _indicatorPos, stSpec.cssColor, true);
       } else {
         pointerIndicator3D.update(elapsed, null, '#FACC15', false);
@@ -968,7 +1087,10 @@ export const Game4TangramBit: React.FC<Game4Props> = ({
 
           <button
             type="button"
-            onClick={() => soundEngine.speak(figConfig.spokenPrompt)}
+            onClick={() => {
+              soundEngine.playTap();
+              soundEngine.speakManual(figConfig.spokenPrompt);
+            }}
             className="hc-button min-h-[42px] px-3.5 rounded-2xl bg-slate-900/95 border border-sky-400/60 text-sky-300 font-bold text-xs flex items-center gap-1.5 shadow-xl"
           >
             <Volume2 className="w-4 h-4 text-sky-400" />
@@ -1011,11 +1133,26 @@ export const Game4TangramBit: React.FC<Game4Props> = ({
               <GraduationCap className="w-4 h-4" />
             </button>
           )}
+
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.playTap();
+                onOpenSettings();
+              }}
+              className="hc-button min-h-[42px] px-3.5 rounded-2xl bg-slate-900/95 hover:bg-slate-800 border-2 border-slate-600 hover:border-amber-400 text-slate-100 font-bold text-xs flex items-center gap-1.5 shadow-xl"
+              title="Configurações de Áudio, Narração e Volumes"
+              aria-label="Abrir Configurações"
+            >
+              <Settings className="w-4 h-4 text-amber-400" />
+            </button>
+          )}
         </div>
       </header>
 
-      {/* Faixa de Orientação Visual no Topo Central */}
-      {activeSelectedSpec && !placedIds.includes(activeSelectedSpec.id) && (
+      {/* Faixa de Orientação Visual no Topo Central (Oculta na Celebração) */}
+      {!showCelebration && activeSelectedSpec && !placedIds.includes(activeSelectedSpec.id) && (
         <div className="pointer-events-none fixed top-16 inset-x-0 z-10 flex justify-center px-3">
           <div className="pointer-events-auto rounded-full bg-slate-900/95 border-2 border-amber-400 px-4 py-1.5 text-xs font-extrabold text-amber-200 flex items-center gap-2 shadow-2xl animate-guide-glow">
             <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
@@ -1040,76 +1177,78 @@ export const Game4TangramBit: React.FC<Game4Props> = ({
         </div>
       )}
 
-      {/* Dock Flutuante Inferior Arrastável e Minimizável */}
-      <DraggableMinimizableDock
-        title={`Blocos de Madeira 3D (${placedIds.length}/${figConfig.pieces.length} encaixados)`}
-        minimizedLabel="🧩 Abrir Peças do Tangram"
-        maxWidthClass="max-w-4xl"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-2.5">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {figConfig.pieces.map((p) => {
-              const isDone = placedIds.includes(p.id);
-              const isSel = selectedPieceId === p.id && !isDone;
-              return (
+      {/* Dock Flutuante Inferior Arrastável e Minimizável (Oculto na Celebração) */}
+      {!showCelebration && (
+        <DraggableMinimizableDock
+          title={`Blocos de Madeira 3D (${placedIds.length}/${figConfig.pieces.length} encaixados)`}
+          minimizedLabel="🧩 Abrir Peças do Tangram"
+          maxWidthClass="max-w-4xl"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {figConfig.pieces.map((p) => {
+                const isDone = placedIds.includes(p.id);
+                const isSel = selectedPieceId === p.id && !isDone;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    disabled={isDone}
+                    onClick={() => {
+                      setSelectedPieceId(p.id);
+                      snapPieceToBoard(p, false);
+                    }}
+                    onMouseEnter={() => soundEngine.speakHover(p.name)}
+                    style={{ backgroundColor: isDone ? undefined : p.cssColor }}
+                    className={`min-h-[42px] px-3 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all border ${
+                      isDone
+                        ? 'bg-slate-800/40 border-slate-800 text-slate-500 opacity-50'
+                        : isSel
+                        ? 'border-2 border-white text-white ring-3 ring-amber-300 scale-105 animate-guide-glow'
+                        : 'border-white/40 text-white opacity-90 hover:opacity-100'
+                    }`}
+                  >
+                    <span className="w-5 h-5 rounded-full bg-slate-950/45 flex items-center justify-center text-xs font-black">
+                      {isDone ? '✓' : p.symbol}
+                    </span>
+                    <span>{p.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {level === 2 && selectedPieceId && !placedIds.includes(selectedPieceId) && (
                 <button
-                  key={p.id}
                   type="button"
-                  disabled={isDone}
-                  onClick={() => {
-                    setSelectedPieceId(p.id);
-                    snapPieceToBoard(p, false);
-                  }}
-                  onMouseEnter={() => soundEngine.speakHover(p.name)}
-                  style={{ backgroundColor: isDone ? undefined : p.cssColor }}
-                  className={`min-h-[42px] px-3 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all border ${
-                    isDone
-                      ? 'bg-slate-800/40 border-slate-800 text-slate-500 opacity-50'
-                      : isSel
-                      ? 'border-2 border-white text-white ring-3 ring-amber-300 scale-105 animate-guide-glow'
-                      : 'border-white/40 text-white opacity-90 hover:opacity-100'
+                  onClick={() => rotatePiece45(selectedPieceId)}
+                  className={`hc-button min-h-[42px] px-3.5 rounded-xl font-extrabold text-xs flex items-center gap-1.5 shadow-md ${
+                    !isSelectedAligned
+                      ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 animate-guide-glow'
+                      : 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-400/50'
                   }`}
                 >
-                  <span className="w-5 h-5 rounded-full bg-slate-950/45 flex items-center justify-center text-xs font-black">
-                    {isDone ? '✓' : p.symbol}
-                  </span>
-                  <span>{p.name}</span>
+                  <RotateCw className="w-4 h-4" />
+                  <span>Girar 45° {!isSelectedAligned ? '(Alinhar!)' : '(Alinhada ✓)'}</span>
                 </button>
-              );
-            })}
-          </div>
+              )}
 
-          <div className="flex items-center gap-2">
-            {level === 2 && selectedPieceId && !placedIds.includes(selectedPieceId) && (
               <button
                 type="button"
-                onClick={() => rotatePiece45(selectedPieceId)}
-                className={`hc-button min-h-[42px] px-3.5 rounded-xl font-extrabold text-xs flex items-center gap-1.5 shadow-md ${
-                  !isSelectedAligned
-                    ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 animate-guide-glow'
-                    : 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-400/50'
-                }`}
+                onClick={() => {
+                  soundEngine.playTap();
+                  initLevelState(level);
+                }}
+                className="hc-button min-h-[42px] px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5"
+                title="Recomeçar Tangram"
               >
-                <RotateCw className="w-4 h-4" />
-                <span>Girar 45° {!isSelectedAligned ? '(Alinhar!)' : '(Alinhada ✓)'}</span>
+                <RotateCcw className="w-4 h-4" />
+                <span className="hidden sm:inline">Reiniciar</span>
               </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playTap();
-                initLevelState(level);
-              }}
-              className="hc-button min-h-[42px] px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5"
-              title="Recomeçar Tangram"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span className="hidden sm:inline">Reiniciar</span>
-            </button>
+            </div>
           </div>
-        </div>
-      </DraggableMinimizableDock>
+        </DraggableMinimizableDock>
+      )}
 
       {showIntro && (
         <GameIntroModal
@@ -1126,24 +1265,156 @@ export const Game4TangramBit: React.FC<Game4Props> = ({
         />
       )}
 
+      {/* CELEBRAÇÃO EM 2 COLUNAS LADO A LADO: TANGRAM 3D COMPLETO (ESQUERDA) + MODAL DE PARABÉNS (DIREITA) */}
       {showCelebration && (
-        <CelebrationOverlay
-          levelCompleted={level}
-          message={`Incrível! Você montou ${figConfig.title} com todas as formas geométricas 3D perfeitamente encaixadas!`}
-          onNextLevel={
-            level < 3
-              ? () => {
-                  setLevel((level + 1) as 1 | 2 | 3);
-                  setShowCelebration(false);
-                }
-              : undefined
-          }
-          onReplay={() => {
-            initLevelState(level);
-            setShowCelebration(false);
-          }}
-          onBackHub={onBackHub}
-        />
+        <div className="pointer-events-none fixed inset-0 z-30 flex flex-col md:flex-row items-center justify-between p-4 md:px-8 lg:px-14 pt-20 pb-6 gap-4">
+          {/* Confete festivo */}
+          <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
+            {Array.from({ length: 20 }, (_, i) => (
+              <div
+                key={i}
+                style={{
+                  left: `${(i * 100) / 20}%`,
+                  animationDelay: `${(i % 6) * 0.15}s`,
+                  backgroundColor: ['#FBBF24', '#38BDF8', '#34D399', '#F472B6', '#A78BFA'][i % 5],
+                  animation: 'confettiFall 2.8s ease-out forwards',
+                }}
+                className="absolute top-0 w-3.5 h-3.5 rounded-sm"
+              />
+            ))}
+          </div>
+
+          {/* COLUNA 1 (ESQUERDA): Exposição Interativa do Tangram 3D Completo */}
+          <div className="w-full md:w-7/12 h-full flex flex-col justify-between items-center py-2">
+            <div className="pointer-events-auto hc-surface rounded-2xl bg-slate-900/95 border-2 border-emerald-400 px-4 py-2 shadow-2xl flex items-center gap-2.5 animate-guide-glow">
+              <Sparkles className="w-5 h-5 text-amber-400 shrink-0" />
+              <span className="text-xs md:text-sm font-extrabold text-white">
+                {tangramFeedbackText}
+              </span>
+            </div>
+
+            <div className="flex-1" />
+
+            <div className="pointer-events-auto hc-surface w-full max-w-xl rounded-3xl bg-slate-900/95 border-2 border-slate-700 p-3 shadow-2xl flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={triggerTangramLights}
+                className="hc-button min-h-[48px] px-4 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs md:text-sm flex items-center gap-2 shadow-lg transition-transform active:scale-95"
+              >
+                <Lightbulb className="w-5 h-5" />
+                <span>Iluminar Altar 3D!</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={triggerTangramWave}
+                className="hc-button min-h-[48px] px-4 rounded-2xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-extrabold text-xs md:text-sm flex items-center gap-2 shadow-lg transition-transform active:scale-95"
+              >
+                <Waves className="w-5 h-5" />
+                <span>Onda nos Blocos!</span>
+              </button>
+
+              <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-2xl p-1">
+                <button
+                  type="button"
+                  onClick={() => rotateTangramLimited(-15)}
+                  disabled={tangramYawDeg <= -45}
+                  className="hc-button min-h-[40px] px-3 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 font-bold text-xs flex items-center gap-1"
+                >
+                  <RotateCcw className="w-4 h-4 text-emerald-400" />
+                  <span>Girar Esq.</span>
+                </button>
+
+                <span className="text-[11px] font-mono text-amber-300 px-1.5 tabular-nums">
+                  {tangramYawDeg > 0 ? `+${tangramYawDeg}°` : `${tangramYawDeg}°`}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => rotateTangramLimited(15)}
+                  disabled={tangramYawDeg >= 45}
+                  className="hc-button min-h-[40px] px-3 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 font-bold text-xs flex items-center gap-1"
+                >
+                  <span>Girar Dir.</span>
+                  <RotateCw className="w-4 h-4 text-emerald-400" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* COLUNA 2 (DIREITA): Card de Parabéns! Estrela Ganha! */}
+          <div className="pointer-events-auto hc-surface w-full md:w-5/12 max-w-md rounded-3xl bg-slate-900/95 border-2 border-amber-400/80 p-6 md:p-7 text-center shadow-2xl">
+            <div className="mx-auto mb-3 w-20 h-20 rounded-full bg-amber-400/20 flex items-center justify-center animate-gentle-bounce">
+              <Star className="w-12 h-12 text-amber-400 fill-amber-400" />
+            </div>
+
+            <div className="flex items-center justify-center gap-1.5 text-amber-300 text-sm font-semibold mb-1">
+              <Sparkles className="w-4 h-4" />
+              <span>Fase {level} Concluída!</span>
+            </div>
+
+            <h3 className="text-2xl md:text-3xl font-bold text-white mb-2 font-display">
+              Parabéns! Estrela Ganha!
+            </h3>
+
+            <p className="text-sm md:text-base text-slate-200 mb-4">
+              “Incrível! Você montou {figConfig.title} com todas as formas geométricas 3D de madeira perfeitamente encaixadas!”
+            </p>
+
+            <div className="rounded-2xl bg-slate-950/90 border border-slate-800 p-3 mb-5 text-left text-xs text-slate-300 space-y-1">
+              <div className="font-bold text-emerald-300 flex items-center gap-1.5">
+                <span>📐</span>
+                <span>Experimente no Tangram 3D ao lado:</span>
+              </div>
+              <p>• Toque em qualquer <strong>peça de madeira 3D</strong> para disparar uma onda;</p>
+              <p>• Clique em <strong>Iluminar Altar 3D</strong> para fazer a figura reluzir;</p>
+              <p>• Gire suavemente para os lados (`±45°`) para ver o encaixe perfeito.</p>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {level < 3 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playTap();
+                    setLevel((level + 1) as 1 | 2 | 3);
+                    setShowCelebration(false);
+                  }}
+                  className="hc-button w-full min-h-[54px] rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-lg flex items-center justify-center gap-2 transition-transform active:scale-95 whitespace-nowrap shadow-lg"
+                >
+                  <span>Próxima Fase</span>
+                  <ArrowRight className="w-6 h-6" />
+                </button>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playTap();
+                    initLevelState(level);
+                  }}
+                  className="hc-button min-h-[48px] rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-sm flex items-center justify-center gap-2 transition-transform active:scale-95 whitespace-nowrap"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Jogar de Novo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playTap();
+                    onBackHub();
+                  }}
+                  className="hc-button min-h-[48px] rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 font-semibold text-sm flex items-center justify-center gap-2 transition-transform active:scale-95 whitespace-nowrap"
+                >
+                  <Home className="w-4 h-4" />
+                  <span>Início</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

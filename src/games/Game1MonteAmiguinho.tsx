@@ -13,6 +13,7 @@ import {
   Lightbulb,
   Zap,
   RotateCw,
+  Settings,
 } from 'lucide-react';
 import { CustomAvatarConfig } from '../utils/storage';
 import { GameIntroModal } from '../components/GameIntroModal';
@@ -37,6 +38,7 @@ interface Game1Props {
   onRecordHint: () => void;
   onSaveCustomAvatar: (config: CustomAvatarConfig) => void;
   onBackHub: () => void;
+  onOpenSettings?: () => void;
 }
 
 interface PartSpec {
@@ -117,6 +119,7 @@ export const Game1MonteAmiguinho: React.FC<Game1Props> = ({
   onRecordHint,
   onSaveCustomAvatar,
   onBackHub,
+  onOpenSettings,
 }) => {
   const [showIntro, setShowIntro] = useState(true);
   const [level, setLevel] = useState<1 | 2 | 3>(1);
@@ -1009,7 +1012,22 @@ export const Game1MonteAmiguinho: React.FC<Game1Props> = ({
 
           <button
             type="button"
-            onClick={() => initLevel(level)}
+            onClick={() => {
+              soundEngine.playTap();
+              if (level === 1) {
+                soundEngine.speakManual(
+                  'O Robô Bit está desmontado na bancada 3D! Arraste as pernas, o tronco e a cabeça até o pedestal brilhante no centro!'
+                );
+              } else if (level === 2) {
+                soundEngine.speakManual(
+                  'Agora temos seis peças tridimensionais na oficina! Conecte as pernas, o tronco, os dois braços, a cabeça e a antena!'
+                );
+              } else {
+                soundEngine.speakManual(
+                  'Oficina de criação 3D! Troque as peças 3D e cores do seu robô e salve como seu mascote!'
+                );
+              }
+            }}
             className="hc-button min-h-[48px] px-3.5 rounded-2xl bg-slate-900/95 border border-slate-700 text-sky-300 font-bold text-xs flex items-center gap-1.5 shadow-xl"
             title="Ouvir instrução novamente"
           >
@@ -1025,6 +1043,22 @@ export const Game1MonteAmiguinho: React.FC<Game1Props> = ({
             >
               <HelpCircle className="w-5 h-5" />
               <span>Dica</span>
+            </button>
+          )}
+
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.playTap();
+                onOpenSettings();
+              }}
+              className="hc-button min-h-[48px] px-3.5 rounded-2xl bg-slate-900/95 hover:bg-slate-800 border-2 border-slate-600 hover:border-amber-400 text-slate-100 font-bold text-xs flex items-center gap-1.5 shadow-xl"
+              title="Configurações de Áudio, Narração e Volumes"
+              aria-label="Abrir Configurações"
+            >
+              <Settings className="w-5 h-5 text-amber-400" />
+              <span className="hidden lg:inline">Configurações</span>
             </button>
           )}
         </div>
